@@ -310,13 +310,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Install dependencies
+### 2. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure environment variables
+### 3. Configure environment variables
 
 Create a `.env` file:
 
@@ -328,7 +328,7 @@ DEEPGRAM_API_KEY=your_deepgram_api_key
 
 Never commit `.env` files or API keys to GitHub.
 
-### 5. Start the backend
+### 4. Start the backend
 
 ```bash
 uvicorn backend.main:backend --reload
