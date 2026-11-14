@@ -293,12 +293,6 @@ The evaluation endpoint receives a response ID, retrieves the associated questio
 
 ## Running the Backend Locally
 
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/Hisham-05/AI-Powered-Interview-Evaluator.git
-cd AI-Powered-Interview-Evaluator
-```
 
 ### 2. Create a virtual environment
 
@@ -732,3 +726,5 @@ They also include:
 - Configuring IAM permissions
 
 The project represents an attempt to understand the complete lifecycle of an AI-powered backendlication rather than only the AI API call.
+=======
+# InterviewAI
