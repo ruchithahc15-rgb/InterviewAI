@@ -4,6 +4,7 @@ import apiClient from "../api/client";
 import { saveCandidateSession } from "../api/session";
 import AuthLayout, { AuthFieldIcon } from "../components/AuthLayout";
 import GoogleAuthButton from "../components/GoogleAuthButton";
+import { productionAPIConfigured } from "../api/client";
 
 let introPlayedInMemory = false;
 
@@ -50,6 +51,10 @@ function Login() {
   async function handleLogin(event) {
     event.preventDefault();
     setError(null);
+    if (!productionAPIConfigured) {
+      setError("This deployed app is missing VITE_API_BASE_URL. Add your public backend URL in Vercel and redeploy.");
+      return;
+    }
     setIsSubmitting(true);
     try {
       const { data } = await apiClient.post("/candidates/login", { email: identifier.trim(), password });

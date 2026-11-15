@@ -1,7 +1,10 @@
 import axios from "axios";
 
-// Reads from .env (VITE_API_BASE_URL). Falls back to local FastAPI dev server.
-const baseURL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+// Vite variables are embedded at build time. Never silently point a deployed
+// build at the visitor's own localhost machine.
+const configuredBaseURL = import.meta.env.VITE_API_BASE_URL?.trim();
+export const productionAPIConfigured = Boolean(configuredBaseURL) || !import.meta.env.PROD;
+const baseURL = configuredBaseURL || (import.meta.env.PROD ? "" : "http://localhost:8000");
 
 const apiClient = axios.create({
   baseURL,

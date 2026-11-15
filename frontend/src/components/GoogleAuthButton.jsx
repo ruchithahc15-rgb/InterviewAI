@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import apiClient from "../api/client";
 import { saveCandidateSession } from "../api/session";
 import { firebaseAuth, firebaseConfigured } from "../api/firebase";
+import { productionAPIConfigured } from "../api/client";
 
 export default function GoogleAuthButton({ onError, remember = false, onBusyChange = () => {} }) {
   const navigate = useNavigate();
@@ -13,6 +14,10 @@ export default function GoogleAuthButton({ onError, remember = false, onBusyChan
   async function signInWithGoogle() {
     if (!firebaseAuth) {
       onError("Google sign-in is not configured for this app yet.");
+      return;
+    }
+    if (!productionAPIConfigured) {
+      onError("This deployed app is missing VITE_API_BASE_URL. Add your public backend URL in Vercel and redeploy.");
       return;
     }
     onError("");
@@ -28,7 +33,7 @@ export default function GoogleAuthButton({ onError, remember = false, onBusyChan
     } catch (error) {
       const message = error.response?.data?.detail
         || (error.code === "auth/popup-closed-by-user" ? "Google sign-in was closed before it finished."
-          : error.code === "auth/unauthorized-domain" ? "This website domain is not authorized in Firebase Authentication."
+            : error.code === "auth/unauthorized-domain" ? `Add ${window.location.hostname} to Firebase Authentication → Settings → Authorized domains.`
             : error.message || "Google sign-in could not be completed. Please try again.");
       onError(message);
     } finally {
