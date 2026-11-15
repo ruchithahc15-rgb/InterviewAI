@@ -1,66 +1,25 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import apiClient from "../api/client";
 import { Icon } from "../components/AppShell";
 import { getCandidateId } from "../api/session";
 
-const dimensions = [
-  ["Accuracy", "accuracy_score"],
-  ["Relevance", "relevance_score"],
-  ["Technical depth", "technical_score"],
-  ["Communication", "grammar_score"],
-  ["Confidence", "confidence_score"],
+const scoreDimensions = [
+  ["Accuracy", "accuracy_score", "#25c6b0"],
+  ["Relevance", "relevance_score", "#6686dc"],
+  ["Technical depth", "technical_score", "#8973c8"],
+  ["Communication", "grammar_score", "#e5a25e"],
+  ["Confidence", "confidence_score", "#62a27d"],
 ];
 
-function average(values) {
-  return values.length ? values.reduce((sum, value) => sum + Number(value || 0), 0) / values.length : 0;
+function average(items, field) {
+  if (!items.length) return null;
+  return Math.round(items.reduce((total, item) => total + Number(item[field] || 0), 0) / items.length);
 }
 
-function TrendChart({ sessions }) {
-  const points = sessions.filter((session) => session.score !== null);
-  if (points.length === 0) {
-    return (
-      <div className="chart-empty">
-        <span className="chart-empty-mark"><Icon name="chart" size={24} /></span>
-        <strong>No evaluated sessions yet</strong>
-        <p>Complete a practice session to see your score plotted here.</p>
-      </div>
-    );
-  }
-  const width = 680, height = 210, left = 48, right = 24, top = 20, bottom = 36;
-  const x = (index) => left + (points.length === 1 ? (width - left - right) / 2 : index * (width - left - right) / (points.length - 1));
-  const y = (score) => top + (100 - score) * (height - top - bottom) / 100;
-  const line = points.map((point, index) => (index ? "L" : "M") + x(index) + " " + y(point.score)).join(" ");
-  const area = points.length > 1 ? line + " L " + x(points.length - 1) + " " + (height - bottom) + " L " + x(0) + " " + (height - bottom) + " Z" : null;
-  return (
-    <svg className="trend-svg" viewBox={"0 0 " + width + " " + height} role="img" aria-label="Interview scores across evaluated sessions">
-      <defs>
-        <linearGradient id="analyticsTrendFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#25c6b0" stopOpacity="0.28" />
-          <stop offset="100%" stopColor="#25c6b0" stopOpacity="0.02" />
-        </linearGradient>
-      </defs>
-      {[0, 25, 50, 75, 100].map((tick) => (
-        <g key={tick}>
-          <line x1={left} y1={y(tick)} x2={width - right} y2={y(tick)} className="chart-gridline" />
-          <text x={left - 10} y={y(tick) + 4} textAnchor="end" className="chart-label">{tick}</text>
-        </g>
-      ))}
-      {area && <path d={area} fill="url(#analyticsTrendFill)" />}
-      {points.length > 1 && <path d={line} className="trend-line" />}
-      {points.map((point, index) => (
-        <g key={point.id} className="cursor-pointer">
-          <circle cx={x(index)} cy={y(point.score)} r="12" fill="transparent" />
-          <circle cx={x(index)} cy={y(point.score)} r="5.5" className="trend-point" />
-          <text x={x(index)} y={y(point.score) - 10} textAnchor="middle" className="chart-label font-bold" fill="#142238">
-            {Math.round(point.score)}
-          </text>
-          <text x={x(index)} y={height - 10} textAnchor="middle" className="chart-label">
-            Session {point.id}
-          </text>
-        </g>
-      ))}
-    </svg>
-  );
+function displayDateTime(value, options) {
+  if (!value) return "Date unavailable";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleString(undefined, options);
 }
 
 function Analytics() {
@@ -69,7 +28,10 @@ function Analytics() {
   const [questions, setQuestions] = useState([]);
   const [responses, setResponses] = useState([]);
   const [evaluations, setEvaluations] = useState([]);
-  const [range, setRange] = useState("10");
+  const [selectedInterviewId, setSelectedInterviewId] = useState("");
+  const [interviewMenuOpen, setInterviewMenuOpen] = useState(false);
+  const [hoveredSkill, setHoveredSkill] = useState("");
+  const interviewPickerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -82,13 +44,14 @@ function Analytics() {
         const mine = interviewsRes.data.filter((item) => item.candidate_id === candidateId);
         const mineIds = new Set(mine.map((item) => item.id));
         const mineQuestions = questionsRes.data.filter((item) => mineIds.has(item.interview_id));
-        const mineQuestionIds = new Set(mineQuestions.map((item) => item.id));
-        const mineResponses = responsesRes.data.filter((item) => mineQuestionIds.has(item.question_id));
-        const mineResponseIds = new Set(mineResponses.map((item) => item.id));
-        setInterviews(mine.sort((a, b) => a.id - b.id));
+        const questionIds = new Set(mineQuestions.map((item) => item.id));
+        const mineResponses = responsesRes.data.filter((item) => questionIds.has(item.question_id));
+        const responseIds = new Set(mineResponses.map((item) => item.id));
+        setInterviews(mine.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)));
         setQuestions(mineQuestions);
         setResponses(mineResponses);
-        setEvaluations(evaluationsRes.data.filter((item) => mineResponseIds.has(item.response_id)));
+        setEvaluations(evaluationsRes.data.filter((item) => responseIds.has(item.response_id)));
+        setSelectedInterviewId("");
       } catch (err) {
         console.error(err);
         setError(true);
@@ -99,51 +62,101 @@ function Analytics() {
     loadAnalytics();
   }, [candidateId]);
 
-  const sessions = useMemo(() => {
-    const questionById = new Map(questions.map((item) => [item.id, item]));
-    const responseById = new Map(responses.map((item) => [item.id, item]));
-    const evaluationsByQuestion = new Map();
-    evaluations.forEach((evaluation) => {
-      const response = responseById.get(evaluation.response_id);
-      const question = response && questionById.get(response.question_id);
-      if (!question) return;
-      const list = evaluationsByQuestion.get(question.interview_id) || [];
-      list.push(evaluation);
-      evaluationsByQuestion.set(question.interview_id, list);
-    });
-    return interviews.map((interview) => {
-      const scores = evaluationsByQuestion.get(interview.id) || [];
-      const allScores = scores.flatMap((item) => dimensions.map(([, field]) => Number(item[field] || 0)));
-      return { ...interview, score: allScores.length ? average(allScores) : null, evaluationCount: scores.length };
-    });
-  }, [interviews, questions, responses, evaluations]);
+  useEffect(() => {
+    if (!interviewMenuOpen) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!interviewPickerRef.current?.contains(event.target)) setInterviewMenuOpen(false);
+    };
+    const closeOnEscape = (event) => { if (event.key === "Escape") setInterviewMenuOpen(false); };
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [interviewMenuOpen]);
 
-  const visibleSessions = range === "all" ? sessions : sessions.slice(-Number(range));
-  const evaluated = evaluations;
-  const skillScores = dimensions.map(([label, field]) => ({ label, score: Math.round(average(evaluated.map((item) => item[field]))) }));
-  const overall = Math.round(average(evaluated.flatMap((item) => dimensions.map(([, field]) => Number(item[field] || 0)))));
-  const strongest = skillScores.length ? [...skillScores].sort((a, b) => b.score - a.score)[0] : null;
-  const completed = interviews.filter((item) => item.status === "completed").length;
-  const progress = interviews.length - completed;
-  const totalQuestions = questions.length;
-  const answeredQuestions = new Set(responses.filter((item) => item.answer?.trim()).map((item) => item.question_id)).size;
-  const answerRate = totalQuestions ? Math.round(answeredQuestions / totalQuestions * 100) : 0;
-  const sessionRate = interviews.length ? Math.round(completed / interviews.length * 100) : 0;
+  const completed = interviews.filter((item) => item.status === "completed");
+  const evaluationByResponse = useMemo(() => new Map(evaluations.map((item) => [item.response_id, item])), [evaluations]);
+  const responseByQuestion = useMemo(() => new Map(responses.map((item) => [item.question_id, item])), [responses]);
+  const answeredQuestions = questions.filter((question) => responseByQuestion.get(question.id)?.answer?.trim());
+  const allAnsweredResponses = answeredQuestions.map((question) => responseByQuestion.get(question.id)).filter(Boolean);
+  const allEvaluations = allAnsweredResponses.map((response) => evaluationByResponse.get(response.id)).filter(Boolean);
+  const selectedInterview = interviews.find((item) => String(item.id) === selectedInterviewId);
+  const selectedQuestions = questions.filter((question) => question.interview_id === selectedInterview?.id);
+  const selectedAnswers = selectedQuestions.map((question) => ({ question, response: responseByQuestion.get(question.id) })).filter((item) => item.response?.answer?.trim());
+  const selectedEvaluations = selectedAnswers.map((item) => evaluationByResponse.get(item.response.id)).filter(Boolean);
+  const skillAverages = [...selectedQuestions.reduce((groups, question) => {
+    const response = responseByQuestion.get(question.id);
+    const evaluation = response && evaluationByResponse.get(response.id);
+    if (!evaluation) return groups;
+    const skill = question.skill || "General practice";
+    const score = Math.round(scoreDimensions.reduce((sum, [, field]) => sum + Number(evaluation[field] || 0), 0) / scoreDimensions.length);
+    groups.set(skill, [...(groups.get(skill) || []), score]);
+    return groups;
+  }, new Map()).entries()].map(([skill, values]) => ({ skill, score: average(values.map((value) => ({ score: value })), "score") }));
+  const overallScore = allEvaluations.length
+    ? Math.round(allEvaluations.reduce((sum, item) => sum + scoreDimensions.reduce((dimensionSum, [, field]) => dimensionSum + Number(item[field] || 0), 0), 0) / (allEvaluations.length * scoreDimensions.length))
+    : null;
+  const skillCounts = selectedQuestions.reduce((counts, question) => {
+    const skill = question.skill || "General practice";
+    counts.set(skill, (counts.get(skill) || 0) + 1);
+    return counts;
+  }, new Map());
+  const donutColors = ["#25c6b0", "#6686dc", "#8973c8", "#e5a25e", "#62a27d", "#d47568", "#5d9baa"];
+  let donutOffset = 0;
+  const donutSegments = [...skillCounts.entries()].map(([skill, count], index) => {
+    const start = donutOffset;
+    const percent = selectedQuestions.length ? count / selectedQuestions.length * 100 : 0;
+    donutOffset += percent;
+    return { skill, count, color: donutColors[index % donutColors.length], start, percent };
+  });
+  const selectedInterviewLabel = selectedInterview ? `${selectedInterview.role} · ${selectedInterview.company} · ${displayDateTime(selectedInterview.created_at, { dateStyle: "medium" })}` : "Choose an interview";
+
   return (
     <div className="analytics-page">
-      <div className="analytics-toolbar"><div><span className="eyebrow teal-eyebrow">YOUR PRACTICE, IN PERSPECTIVE</span><p>Patterns become progress when you can see them.</p></div><label className="range-select"><span>SESSIONS</span><select value={range} onChange={(event) => setRange(event.target.value)}><option value="5">Last 5</option><option value="10">Last 10</option><option value="all">All time</option></select></label></div>
       {error ? <section className="panel analytics-error"><h2>Analytics are unavailable</h2><p>We couldn’t load your saved interview data. Check your connection and try again.</p></section> : <>
-        <section className="analytics-kpis">
-          <article className="analytics-kpi"><span>AVERAGE SCORE</span><strong>{loading ? "—" : evaluated.length ? overall : "—"}</strong><small>{evaluated.length ? "Across " + evaluated.length + " evaluated answers" : "Scores appear after feedback is generated"}</small><i className="kpi-glyph"><Icon name="chart" size={19} /></i></article>
-          <article className="analytics-kpi"><span>SESSIONS COMPLETED</span><strong>{loading ? "—" : completed}</strong><small>{progress ? progress + " session" + (progress === 1 ? "" : "s") + " in progress" : "Your practice history"}</small><i className="kpi-glyph"><Icon name="file" size={19} /></i></article>
-          <article className="analytics-kpi"><span>ANSWERS PRACTICED</span><strong>{loading ? "—" : answeredQuestions}</strong><small>Of {totalQuestions} questions generated</small><i className="kpi-glyph"><Icon name="stack" size={19} /></i></article>
-          <article className="analytics-kpi"><span>STRONGEST AREA</span><strong className="kpi-strongest">{loading ? "—" : evaluated.length ? strongest.label : "—"}</strong><small>{evaluated.length ? strongest.score + " / 100 average" : "Your strengths will emerge"}</small><i className="kpi-glyph"><Icon name="sparkle" size={19} /></i></article>
-        </section>
-        <section className="analytics-grid">
-          <article className="panel chart-panel trend-panel"><div className="chart-heading"><div><span className="chart-overline">PERFORMANCE</span><h2>Score over time</h2><p>Average evaluation scores by interview session</p></div><span className="chart-unit">0–100</span></div>{loading ? <div className="chart-empty">Loading score history…</div> : <TrendChart sessions={visibleSessions} />}</article>
-          <article className="panel chart-panel skills-panel"><div className="chart-heading"><div><span className="chart-overline">FIVE DIMENSIONS</span><h2>Where you’re growing</h2><p>Average scores across your evaluated answers</p></div></div>{loading ? <div className="chart-empty">Loading skill scores…</div> : evaluated.length ? <div className="skill-chart">{skillScores.map((skill) => <div className="skill-row" key={skill.label}><div><span>{skill.label}</span><strong>{skill.score}</strong></div><div className="skill-track"><span style={{ width: skill.score + "%" }} /></div></div>)}</div> : <div className="chart-empty"><span className="chart-empty-mark"><Icon name="sparkle" size={22} /></span><strong>Feedback makes this chart useful</strong><p>Finish an interview to see a detailed view across your answer skills.</p></div>}</article>
-          <article className="panel chart-panel completion-panel"><div className="chart-heading"><div><span className="chart-overline">PRACTICE RHYTHM</span><h2>Session mix</h2><p>Completed and in-progress interviews</p></div></div><div className="mix-chart-wrap"><div className="mix-chart" style={{ "--completed": sessionRate + "%", "--mix-color": "var(--teal)" }}><div><strong>{interviews.length}</strong><small>SESSIONS</small></div></div><div className="mix-legend"><span><i className="legend-complete" />Completed <strong>{completed}</strong></span><span><i className="legend-progress" />In progress <strong>{progress}</strong></span><span><i className="legend-answers" />Questions answered <strong>{answerRate}%</strong></span></div></div></article>
-          <article className="panel insight-panel"><span className="insight-icon"><Icon name="sparkle" size={19} /></span><span className="chart-overline">A NOTE ON YOUR DATA</span><h2>Progress is a practice.</h2><p>Scores reflect saved evaluations only. Keep practicing across different question types to build a fuller picture of your interview readiness.</p><span className="insight-foot">{evaluated.length} EVALUATED ANSWERS · {sessions.length} TOTAL SESSIONS</span></article>
+        <section className="analytics-cards" aria-label="Interview analytics">
+          <details className="analytics-metric-card">
+            <summary><span className="metric-icon"><Icon name="file" size={21} /></span><span className="metric-copy"><small>INTERVIEWS ATTENDED</small><strong>{loading ? "—" : completed.length}</strong><span>Choose a session to review</span></span><span className="metric-chevron"><Icon name="arrow" size={18} /></span></summary>
+            <div className="metric-details">
+              <label className="analytics-select-label" htmlFor="analytics-interview">Select an interview</label>
+              <div className="interview-picker" ref={interviewPickerRef}>
+                <button id="analytics-interview" type="button" className="interview-picker-trigger" aria-haspopup="listbox" aria-expanded={interviewMenuOpen} aria-controls="analytics-interview-options" onClick={() => setInterviewMenuOpen((open) => !open)}><span>{selectedInterviewLabel}</span><Icon name="arrow" size={17} /></button>
+                {interviewMenuOpen && <div className="interview-picker-menu" id="analytics-interview-options" role="listbox" aria-label="Completed interviews">
+                  {completed.length ? completed.map((interview) => <button type="button" role="option" aria-selected={String(interview.id) === selectedInterviewId} key={interview.id} onClick={() => { setSelectedInterviewId(String(interview.id)); setInterviewMenuOpen(false); }}><span><strong>{interview.role}</strong><small>{interview.company} · {displayDateTime(interview.created_at)}</small></span><i>{String(interview.id) === selectedInterviewId ? "Selected" : "Open"}</i></button>) : <p>No completed interviews yet.</p>}
+                </div>}
+              </div>
+              {selectedInterview ? <div className="analytics-question-review"><div className="analytics-selected-heading"><div><h3>{selectedInterview.role}</h3><p>{selectedInterview.company} · {displayDateTime(selectedInterview.created_at)}</p></div><span>{selectedQuestions.length} questions</span></div>
+                {selectedQuestions.length ? selectedQuestions.map((question, index) => {
+                  const response = responseByQuestion.get(question.id);
+                  return <details className="analytics-answer-item" key={question.id}><summary><span>{String(index + 1).padStart(2, "0")}</span><span>{question.question}</span><Icon name="arrow" size={16} /></summary><div><small>{question.skill || "GENERAL PRACTICE"}</small><p>{response?.answer?.trim() || "No answer was recorded for this question."}</p></div></details>;
+                }) : <p className="analytics-empty-note">No questions are attached to this session.</p>}
+              </div> : <p className="analytics-empty-note">Select an interview to open its questions and saved answers.</p>}
+            </div>
+          </details>
+
+          <details className="analytics-metric-card">
+            <summary><span className="metric-icon"><Icon name="chart" size={21} /></span><span className="metric-copy"><small>AVERAGE SCORE</small><strong>{loading ? "—" : overallScore === null ? "—" : `${overallScore}%`}</strong><span>{allEvaluations.length} evaluated answers</span></span><span className="metric-chevron"><Icon name="arrow" size={18} /></span></summary>
+            <div className="metric-details"><div className="analytics-detail-heading"><h3>{selectedInterview ? `${selectedInterview.role} score breakdown` : "Score breakdown"}</h3><p>{selectedInterview ? "How the saved score was evaluated" : "Choose an interview above to see its breakdown."}</p></div>
+              {selectedInterview && skillAverages.length > 0 && <div className="analytics-skill-chart" aria-label="Average score by skill"><h4>Average score by skill</h4>{skillAverages.map(({ skill, score }, index) => <div className="analytics-skill-bar" key={skill}><span>{skill}</span><div><i style={{ width: `${score}%`, animationDelay: `${index * 70}ms` }} /></div><strong>{score}</strong></div>)}</div>}
+              {selectedInterview && (selectedEvaluations.length ? scoreDimensions.map(([label, field, color]) => {
+                const score = average(selectedEvaluations, field);
+                return <div className="analytics-score-row" key={field}><span>{label}</span><div><i style={{ width: `${score}%`, background: color }} /></div><strong>{score}</strong></div>;
+              }) : <p className="analytics-empty-note">This interview does not have evaluated answers yet.</p>)}
+            </div>
+          </details>
+
+          <details className="analytics-metric-card">
+            <summary><span className="metric-icon"><Icon name="stack" size={21} /></span><span className="metric-copy"><small>QUESTIONS ANSWERED</small><strong>{loading ? "—" : answeredQuestions.length}</strong><span>Saved answers across interviews</span></span><span className="metric-chevron"><Icon name="arrow" size={18} /></span></summary>
+            <div className="metric-details"><div className="analytics-detail-heading"><p>{selectedInterview ? `${selectedInterview.role} · ${selectedInterview.company}` : "Choose an interview above to see its skill mix."}</p></div>
+              {selectedInterview && selectedQuestions.length ? <div className="skill-donut-layout"><div className="skill-donut" aria-label={`${selectedQuestions.length} questions across ${skillCounts.size} skills`}>
+                <svg className="skill-donut-svg" viewBox="0 0 100 100" role="img" aria-label="Question count by skill">
+                  {donutSegments.map((segment) => { const circumference = 2 * Math.PI * 39; const length = circumference * segment.percent / 100; return <circle key={segment.skill} cx="50" cy="50" r="39" fill="none" stroke={segment.color} strokeWidth="13" strokeDasharray={`${length} ${circumference - length}`} strokeDashoffset={-circumference * segment.start / 100} onMouseEnter={() => setHoveredSkill(segment.skill)} onMouseLeave={() => setHoveredSkill("")} onFocus={() => setHoveredSkill(segment.skill)} onBlur={() => setHoveredSkill("")} tabIndex="0" aria-label={`${segment.skill}: ${segment.count} ${segment.count === 1 ? "question" : "questions"}`}><title>{segment.skill}: {segment.count} {segment.count === 1 ? "question" : "questions"}</title></circle>; })}
+                </svg><div><strong>{selectedQuestions.length}</strong><span>QUESTIONS</span></div>{hoveredSkill && <span className="donut-tooltip" role="status">{hoveredSkill}: {skillCounts.get(hoveredSkill)} {skillCounts.get(hoveredSkill) === 1 ? "question" : "questions"}</span>}
+              </div><div className="skill-donut-legend">{[...skillCounts.entries()].map(([skill, count], index) => <div key={skill} onMouseEnter={() => setHoveredSkill(skill)} onMouseLeave={() => setHoveredSkill("")}><i style={{ background: donutColors[index % donutColors.length] }} /><span>{skill}</span><strong>{count}</strong></div>)}</div></div> : selectedInterview ? <p className="analytics-empty-note">No questions are attached to this session.</p> : null}
+            </div>
+          </details>
         </section>
       </>}
     </div>

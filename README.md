@@ -359,6 +359,12 @@ For local development, configure:
 
 ```text
 VITE_API_BASE_URL=http://localhost:8000
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_STORAGE_BUCKET=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
 ```
 
 Start the development server:
@@ -457,15 +463,23 @@ TWILIO_AUTH_TOKEN=
 TWILIO_FROM_NUMBER=
 # Or set TWILIO_MESSAGING_SERVICE_SID instead of TWILIO_FROM_NUMBER
 TWILIO_MESSAGING_SERVICE_SID=
+FIREBASE_WEB_API_KEY=
 ```
 
 These values are stored on the backend server and are not committed to the repository.
 Password reset codes are delivered by SMTP for email accounts and Twilio for phone accounts. Configure the matching delivery settings before enabling password recovery in production.
+Google Authentication verifies Firebase ID tokens on the backend before linking a verified Google email to an InterviewAI candidate account. Set `FIREBASE_WEB_API_KEY` on the backend and the matching `VITE_FIREBASE_*` web configuration on the frontend. Enable the Google provider and authorize the local and production domains in Firebase Authentication.
 
 ### Frontend
 
 ```text
 VITE_API_BASE_URL=
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_STORAGE_BUCKET=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
 ```
 
 The production frontend is built with the backend API URL supplied through the Vite production environment.

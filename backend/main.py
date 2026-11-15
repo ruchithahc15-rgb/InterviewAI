@@ -43,9 +43,27 @@ with engine.begin() as connection:
     candidate_columns = {column["name"] for column in inspector.get_columns("candidates")}
     if "phone_number" not in candidate_columns:
         connection.execute(text("ALTER TABLE candidates ADD COLUMN phone_number VARCHAR(32)"))
+    if "email_verified" not in candidate_columns:
+        connection.execute(text("ALTER TABLE candidates ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT TRUE"))
+    if "phone_verified" not in candidate_columns:
+        connection.execute(text("ALTER TABLE candidates ADD COLUMN phone_verified BOOLEAN NOT NULL DEFAULT TRUE"))
     interview_columns = {column["name"] for column in inspector.get_columns("interviews")}
     if "created_at" not in interview_columns:
         connection.execute(text("ALTER TABLE interviews ADD COLUMN created_at TIMESTAMP NULL"))
+    if "skills" not in interview_columns:
+        connection.execute(text("ALTER TABLE interviews ADD COLUMN skills JSON"))
+        connection.execute(text("UPDATE interviews SET skills = '[]' WHERE skills IS NULL"))
+    if "research_sources" not in interview_columns:
+        connection.execute(text("ALTER TABLE interviews ADD COLUMN research_sources JSON"))
+        connection.execute(text("UPDATE interviews SET research_sources = '[]' WHERE research_sources IS NULL"))
+    question_columns = {column["name"] for column in inspect(connection).get_columns("questions")}
+    if "skill" not in question_columns:
+        connection.execute(text("ALTER TABLE questions ADD COLUMN skill VARCHAR(120)"))
+    reset_code_columns = {column["name"] for column in inspect(connection).get_columns("password_reset_codes")}
+    if "purpose" not in reset_code_columns:
+        connection.execute(text("ALTER TABLE password_reset_codes ADD COLUMN purpose VARCHAR(32) NOT NULL DEFAULT 'password_reset'"))
+    if "destination" not in reset_code_columns:
+        connection.execute(text("ALTER TABLE password_reset_codes ADD COLUMN destination VARCHAR(255) NULL"))
     phone_indexes = {index["name"] for index in inspect(connection).get_indexes("candidates")}
     if "ix_candidates_phone_number" not in phone_indexes:
         connection.execute(text("CREATE UNIQUE INDEX ix_candidates_phone_number ON candidates (phone_number)"))

@@ -118,8 +118,36 @@ def llm_questions(id: int):
         if interview is None:
             raise HTTPException(status_code=404, detail="Interview not found")
 
-        new_questions = generate_questions(role=interview.role, company= interview.company)
-        list_of_questions = [Question(interview_id=id, question=question) for question in new_questions]
+        skills = interview.skills or []
+        generation = generate_questions(role=interview.role, company=interview.company, skills=skills)
+        if isinstance(generation, dict) and "questions" in generation:
+            new_questions = generation["questions"]
+            sources = generation.get("sources") or []
+            interview.research_sources = [
+                {"title": str(source.get("title") or source.get("url")), "url": source["url"]}
+                for source in sources if isinstance(source, dict) and isinstance(source.get("url"), str) and source["url"].startswith(("https://", "http://"))
+            ]
+        else:
+            new_questions = generation
+        list_of_questions = []
+        for index, item in enumerate(new_questions):
+            # Older generators and a few model response shapes return plain strings.
+            # Normalize at the API boundary so both formats remain supported.
+            if isinstance(item, str):
+                question_text = item
+                generated_skill = None
+            elif isinstance(item, dict):
+                question_text = item.get("question")
+                generated_skill = item.get("skill")
+            else:
+                question_text = getattr(item, "question", None)
+                generated_skill = getattr(item, "skill", None)
+            if not isinstance(question_text, str) or not question_text.strip():
+                raise ValueError("Question generation returned an invalid question")
+            skill = generated_skill if isinstance(generated_skill, str) and generated_skill in skills else (
+                skills[index % len(skills)] if skills else (generated_skill if isinstance(generated_skill, str) else None)
+            )
+            list_of_questions.append(Question(interview_id=id, question=question_text.strip(), skill=skill))
         session.add_all(list_of_questions)
         session.commit()
         for question in list_of_questions:

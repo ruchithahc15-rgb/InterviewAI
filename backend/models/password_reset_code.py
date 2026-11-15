@@ -15,3 +15,5 @@ class PasswordResetCode(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     attempts = Column(Integer, default=0, nullable=False)
+    purpose = Column(String(32), default="password_reset", nullable=False, index=True)
+    destination = Column(String(255), nullable=True, index=True)

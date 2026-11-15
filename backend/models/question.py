@@ -9,6 +9,8 @@ class Question(Base):
     
     question = Column(String)
 
+    skill = Column(String(120), nullable=True)
+
     interview_id = Column(Integer, ForeignKey("interviews.id"))
 
     interview_question = relationship("Interview", back_populates="question_interview")

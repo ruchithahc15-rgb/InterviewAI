@@ -1,5 +1,17 @@
-from backend.LLM.question import gemini
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
 from backend.schemas.evaluation import GeneratedEvaluation
+
+load_dotenv()
+
+API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_BASE_URL = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/")
+
+gemini = OpenAI(
+    base_url=GEMINI_BASE_URL,
+    api_key=API_KEY,
+)
 
 def evaluate_response(question: str, answer: str):
     system_prompt = f"""You are a senior technical engineer conducting a real technical interview.

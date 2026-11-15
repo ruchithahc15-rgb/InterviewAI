@@ -9,6 +9,7 @@ import MyInterviews from "./pages/MyInterviews";
 import QuestionBank from "./pages/QuestionBank";
 import Profile from "./pages/Profile";
 import Analytics from "./pages/Analytics";
+import Welcome from "./pages/Welcome";
 import AppShell from "./components/AppShell";
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/welcome" element={<Welcome />} />
         <Route path="/home" element={<AppShell><Home /></AppShell>} />
         <Route path="/create" element={<AppShell><CreateInterview /></AppShell>} />
         <Route path="/interviews" element={<AppShell><MyInterviews /></AppShell>} />

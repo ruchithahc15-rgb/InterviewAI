@@ -4,17 +4,18 @@ import string
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 
 from backend.schemas.candidate import (
-    CandidateResponse, CreateCandidate, CandidateUpdate, LoginCandidate,
-    PasswordResetConfirm, PasswordResetRequest,
+    CandidateResponse, CreateCandidate, CandidateUpdate, LoginCandidate, GoogleLoginCandidate,
+    PasswordResetConfirm, PasswordResetRequest, ContactVerificationRequest, ContactVerificationConfirm,
 )
 from backend.models.candidate import Candidate
 from backend.models.password_reset_code import PasswordResetCode
 from backend.database import sessionLocal
 from backend.services.auth import hash_password, verify_password
-from backend.services.otp_delivery import deliver_reset_code, reset_delivery_configured
+from backend.services.otp_delivery import deliver_reset_code, deliver_verification_code, reset_delivery_configured
+from backend.services.firebase_auth import verify_firebase_id_token
 
 router = APIRouter()
 
@@ -51,7 +52,7 @@ def create_candidate(candidate: CreateCandidate):
             raise HTTPException(status_code=409, detail="Phone number is already registered")
         db_candidate = Candidate(
             name=candidate.name.strip(), email=email, phone_number=phone_number,
-            password=hash_password(candidate.password),
+            password=hash_password(candidate.password), email_verified=False, phone_verified=not bool(phone_number),
         )
         session.add(db_candidate)
         session.commit()
@@ -79,10 +80,52 @@ def login(credentials: LoginCandidate):
         verification = verify_password(credentials.password, candidate.password)
 
         if verification:
+            if "@" in identifier and not candidate.email_verified:
+                raise HTTPException(status_code=403, detail="Email verification is required before signing in.")
+            if "@" not in identifier and not candidate.phone_verified:
+                raise HTTPException(status_code=403, detail="Phone verification is required before signing in.")
             return {"candidate_id": candidate.id, "name": candidate.name}
         else:
             raise HTTPException(status_code=401, detail="Email or password is incorrect")
 
+    finally:
+        session.close()
+
+
+@router.post("/candidates/google-login")
+def google_login(credentials: GoogleLoginCandidate):
+    try:
+        user = verify_firebase_id_token(credentials.id_token)
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=401, detail=str(error)) from error
+    except ConnectionError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    email = (user.get("email") or "").strip().lower()
+    providers = user.get("providerUserInfo") or []
+    if not email or not user.get("emailVerified") or not any(provider.get("providerId") == "google.com" for provider in providers):
+        raise HTTPException(status_code=401, detail="Use a verified Google account to continue.")
+
+    session = sessionLocal()
+    try:
+        candidate = session.execute(select(Candidate).where(func.lower(Candidate.email) == email)).scalar_one_or_none()
+        if candidate is None:
+            display_name = (user.get("displayName") or email.split("@", 1)[0]).strip()
+            candidate = Candidate(
+                name=display_name or "InterviewAI candidate",
+                email=email,
+                password=hash_password(secrets.token_urlsafe(48)),
+                email_verified=True,
+            )
+            session.add(candidate)
+            session.commit()
+            session.refresh(candidate)
+        elif not candidate.email_verified:
+            candidate.email_verified = True
+            session.commit()
+        return {"candidate_id": candidate.id, "name": candidate.name}
     finally:
         session.close()
 
@@ -136,6 +179,10 @@ def update_candidate(id:int, candidate_update: CandidateUpdate):
         if duplicate_phone:
             raise HTTPException(status_code=409, detail="Phone number is already registered")
 
+        if candidate.email != email:
+            candidate.email_verified = False
+        if candidate.phone_number != phone_number:
+            candidate.phone_verified = not bool(phone_number)
         candidate.name = candidate_update.name.strip()
         candidate.email = email
         candidate.phone_number = phone_number
@@ -145,6 +192,105 @@ def update_candidate(id:int, candidate_update: CandidateUpdate):
 
         return candidate
 
+    finally:
+        session.close()
+
+
+@router.post("/candidates/verification/request")
+def request_contact_verification(request: ContactVerificationRequest):
+    identifier = request.identifier.strip()
+    is_email = "@" in identifier
+    destination = identifier.lower() if is_email else normalize_phone(identifier)
+    if not destination or (is_email and (identifier.startswith("@") or identifier.endswith("@") or identifier.count("@") != 1)):
+        raise HTTPException(status_code=422, detail="Enter a valid email address or Indian mobile number")
+    if not reset_delivery_configured(is_email):
+        channel = "Email" if is_email else "SMS"
+        raise HTTPException(status_code=503, detail=f"{channel} verification is not configured on the server")
+
+    session = sessionLocal()
+    try:
+        candidate = session.execute(
+            select(Candidate).where(func.lower(Candidate.email) == destination if is_email else Candidate.phone_number == destination)
+        ).scalar_one_or_none()
+        if candidate is None:
+            return {"message": "If the account exists, a verification code has been sent."}
+        verified = candidate.email_verified if is_email else candidate.phone_verified
+        if verified:
+            return {"message": "This contact is already verified."}
+
+        now = datetime.now()
+        session.execute(delete(PasswordResetCode).where(
+            PasswordResetCode.candidate_id == candidate.id,
+            PasswordResetCode.purpose == "contact_verification",
+            PasswordResetCode.destination == destination,
+            PasswordResetCode.created_at < now - timedelta(minutes=15),
+        ))
+        recent_codes = session.execute(select(PasswordResetCode).where(
+            PasswordResetCode.candidate_id == candidate.id,
+            PasswordResetCode.purpose == "contact_verification",
+            PasswordResetCode.destination == destination,
+            PasswordResetCode.created_at >= now - timedelta(minutes=15),
+        )).scalars().all()
+        if len(recent_codes) >= 3:
+            raise HTTPException(status_code=429, detail="Too many requests. Try again in 15 minutes.")
+
+        code = "".join(secrets.choice(string.digits) for _ in range(6))
+        salt = secrets.token_hex(16)
+        code_record = PasswordResetCode(
+            candidate_id=candidate.id, code_hash=hash_reset_code(code, salt), code_salt=salt,
+            created_at=now, expires_at=now + timedelta(minutes=10), purpose="contact_verification",
+            destination=destination,
+        )
+        session.add(code_record)
+        session.flush()
+        try:
+            deliver_verification_code(destination, code, is_email)
+        except RuntimeError as error:
+            session.rollback()
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        session.commit()
+        return {"message": "A six-digit verification code was sent."}
+    finally:
+        session.close()
+
+
+@router.post("/candidates/verification/confirm")
+def confirm_contact_verification(request: ContactVerificationConfirm):
+    identifier = request.identifier.strip()
+    is_email = "@" in identifier
+    destination = identifier.lower() if is_email else normalize_phone(identifier)
+    if not destination or (is_email and (identifier.startswith("@") or identifier.endswith("@") or identifier.count("@") != 1)):
+        raise HTTPException(status_code=422, detail="Enter a valid email address or Indian mobile number")
+    session = sessionLocal()
+    try:
+        candidate = session.execute(
+            select(Candidate).where(func.lower(Candidate.email) == destination if is_email else Candidate.phone_number == destination)
+        ).scalar_one_or_none()
+        if candidate is None:
+            raise HTTPException(status_code=400, detail="That code is invalid or expired. Request a new one.")
+        code_record = session.execute(select(PasswordResetCode).where(
+            PasswordResetCode.candidate_id == candidate.id,
+            PasswordResetCode.purpose == "contact_verification",
+            or_(PasswordResetCode.destination == destination, PasswordResetCode.destination.is_(None)),
+        ).order_by(PasswordResetCode.created_at.desc())).scalars().first()
+        if not code_record or code_record.expires_at < datetime.now() or code_record.attempts >= 5:
+            raise HTTPException(status_code=400, detail="That code is invalid or expired. Request a new one.")
+        if not secrets.compare_digest(hash_reset_code(request.code, code_record.code_salt), code_record.code_hash):
+            code_record.attempts += 1
+            session.commit()
+            raise HTTPException(status_code=400, detail="That code is incorrect. Try again.")
+
+        if is_email:
+            candidate.email_verified = True
+        else:
+            candidate.phone_verified = True
+        session.execute(delete(PasswordResetCode).where(
+            PasswordResetCode.candidate_id == candidate.id,
+            PasswordResetCode.purpose == "contact_verification",
+            PasswordResetCode.destination == destination,
+        ))
+        session.commit()
+        return {"message": f"{'Email' if is_email else 'Phone'} verified successfully.", "email_verified": candidate.email_verified, "phone_verified": candidate.phone_verified}
     finally:
         session.close()
 
@@ -172,12 +318,16 @@ def request_password_reset(request: PasswordResetRequest):
         session.execute(
             delete(PasswordResetCode).where(
                 PasswordResetCode.candidate_id == candidate.id,
+                PasswordResetCode.purpose == "password_reset",
+                PasswordResetCode.destination == destination,
                 PasswordResetCode.created_at < now - timedelta(minutes=15),
             )
         )
         recent_codes = session.execute(
             select(PasswordResetCode).where(
                 PasswordResetCode.candidate_id == candidate.id,
+                PasswordResetCode.purpose == "password_reset",
+                PasswordResetCode.destination == destination,
                 PasswordResetCode.created_at >= now - timedelta(minutes=15),
             )
         ).scalars().all()
@@ -192,6 +342,8 @@ def request_password_reset(request: PasswordResetRequest):
             code_salt=salt,
             created_at=now,
             expires_at=now + timedelta(minutes=10),
+            purpose="password_reset",
+            destination=destination,
         )
         session.add(reset_code)
         session.flush()
@@ -224,7 +376,7 @@ def confirm_password_reset(request: PasswordResetConfirm):
 
         reset_code = session.execute(
             select(PasswordResetCode)
-            .where(PasswordResetCode.candidate_id == candidate.id)
+            .where(PasswordResetCode.candidate_id == candidate.id, PasswordResetCode.purpose == "password_reset", or_(PasswordResetCode.destination == destination, PasswordResetCode.destination.is_(None)))
             .order_by(PasswordResetCode.created_at.desc())
         ).scalars().first()
         if not reset_code or reset_code.expires_at < datetime.now() or reset_code.attempts >= 5:
@@ -236,7 +388,7 @@ def confirm_password_reset(request: PasswordResetConfirm):
             raise HTTPException(status_code=400, detail="That code is incorrect. Try again.")
 
         candidate.password = hash_password(request.new_password)
-        session.execute(delete(PasswordResetCode).where(PasswordResetCode.candidate_id == candidate.id))
+        session.execute(delete(PasswordResetCode).where(PasswordResetCode.candidate_id == candidate.id, PasswordResetCode.purpose == "password_reset", or_(PasswordResetCode.destination == destination, PasswordResetCode.destination.is_(None))))
         session.commit()
         return {"message": "Your password has been updated. You can now sign in."}
     finally:

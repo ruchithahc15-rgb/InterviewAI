@@ -1,7 +1,7 @@
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
-from sqlalchemy import Column, DateTime, Integer, String, ForeignKey
+from sqlalchemy import Column, DateTime, Integer, String, ForeignKey, JSON
 from datetime import datetime
 
 class Interview(Base):
@@ -14,6 +14,10 @@ class Interview(Base):
     company = Column(String)
 
     role = Column(String)
+
+    skills = Column(JSON, nullable=False, default=list)
+
+    research_sources = Column(JSON, nullable=False, default=list)
 
     status = Column(String, default="in_progress")
 

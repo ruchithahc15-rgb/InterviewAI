@@ -17,7 +17,7 @@ def reset_delivery_configured(is_email: bool) -> bool:
     )
 
 
-def send_email_code(destination: str, code: str) -> None:
+def send_email_code(destination: str, code: str, purpose: str = "password_reset") -> None:
     host = os.getenv("SMTP_HOST")
     sender = os.getenv("SMTP_FROM_EMAIL")
     if not host or not sender:
@@ -25,11 +25,12 @@ def send_email_code(destination: str, code: str) -> None:
 
     port = int(os.getenv("SMTP_PORT", "587"))
     message = EmailMessage()
-    message["Subject"] = "Your InterviewAI password reset code"
+    is_verification = purpose == "contact_verification"
+    message["Subject"] = "Verify your InterviewAI account" if is_verification else "Your InterviewAI password reset code"
     message["From"] = sender
     message["To"] = destination
     message.set_content(
-        f"Your InterviewAI password reset code is {code}. "
+        f"Your InterviewAI {'verification' if is_verification else 'password reset'} code is {code}. "
         "It expires in 10 minutes. If you did not request this, you can ignore this message."
     )
 
@@ -51,7 +52,7 @@ def send_email_code(destination: str, code: str) -> None:
         raise RuntimeError("Email provider could not deliver the code") from error
 
 
-def send_sms_code(destination: str, code: str) -> None:
+def send_sms_code(destination: str, code: str, purpose: str = "password_reset") -> None:
     account_sid = os.getenv("TWILIO_ACCOUNT_SID")
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
     from_number = os.getenv("TWILIO_FROM_NUMBER")
@@ -59,7 +60,8 @@ def send_sms_code(destination: str, code: str) -> None:
     if not account_sid or not auth_token or not (from_number or service_sid):
         raise RuntimeError("SMS delivery is not configured")
 
-    payload = {"To": destination, "Body": f"Your InterviewAI password reset code is {code}. It expires in 10 minutes."}
+    label = "verification" if purpose == "contact_verification" else "password reset"
+    payload = {"To": destination, "Body": f"Your InterviewAI {label} code is {code}. It expires in 10 minutes."}
     payload["MessagingServiceSid" if service_sid else "From"] = service_sid or from_number
     request = Request(
         f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json",
@@ -80,3 +82,10 @@ def deliver_reset_code(destination: str, code: str, is_email: bool) -> None:
         send_email_code(destination, code)
     else:
         send_sms_code(destination, code)
+
+
+def deliver_verification_code(destination: str, code: str, is_email: bool) -> None:
+    if is_email:
+        send_email_code(destination, code, "contact_verification")
+    else:
+        send_sms_code(destination, code, "contact_verification")

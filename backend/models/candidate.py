@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Boolean, Column, Integer, String
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -13,6 +13,10 @@ class Candidate(Base):
     email = Column(String)
 
     phone_number = Column(String(32), nullable=True)
+
+    email_verified = Column(Boolean, nullable=False, default=True)
+
+    phone_verified = Column(Boolean, nullable=False, default=True)
 
     password = Column(String)
 

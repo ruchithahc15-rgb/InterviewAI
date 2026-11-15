@@ -1,10 +1,14 @@
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from backend.database import sessionLocal
 from backend.models.interview import Interview
 from backend.models.candidate import Candidate
 from backend.schemas.interview import CreateInterview, InterviewResponse, UpdateInterview
+from backend.models.question import Question
+from backend.models.response import Response
+from backend.models.evaluation import Evaluation
+from backend.models.interview_result import InterviewResult
 
 router = APIRouter()
 
@@ -19,7 +23,7 @@ def create_interview(interview: CreateInterview):
         if candidate is None:
             raise HTTPException(status_code = 404, detail = "Candidate not found")
 
-        db_interview = Interview(candidate_id = interview.candidate_id, company = interview.company, role = interview.role)
+        db_interview = Interview(candidate_id = interview.candidate_id, company = interview.company, role = interview.role, skills = interview.skills)
         session.add(db_interview)
         session.commit()
         session.refresh(db_interview)
@@ -74,6 +78,8 @@ def update_interview(id : int, updated_content : UpdateInterview):
         interview.candidate_id = updated_content.candidate_id
         interview.company = updated_content.company
         interview.role = updated_content.role
+        if updated_content.skills is not None:
+            interview.skills = updated_content.skills
 
         session.commit()
         session.refresh(interview)
@@ -94,6 +100,14 @@ def delete_interview(id:int):
         if interview is None:
             raise HTTPException(status_code=404, detail="Interview not found")
 
+        question_ids = session.execute(select(Question.id).where(Question.interview_id == id)).scalars().all()
+        response_ids = session.execute(select(Response.id).where(Response.question_id.in_(question_ids))).scalars().all() if question_ids else []
+        if response_ids:
+            session.execute(delete(Evaluation).where(Evaluation.response_id.in_(response_ids)))
+            session.execute(delete(Response).where(Response.id.in_(response_ids)))
+        if question_ids:
+            session.execute(delete(Question).where(Question.id.in_(question_ids)))
+        session.execute(delete(InterviewResult).where(InterviewResult.interview_id == id))
         session.delete(interview)
         session.commit()
         return "Interview deleted successfully"

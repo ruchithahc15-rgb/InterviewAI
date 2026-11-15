@@ -23,6 +23,8 @@ from backend.models.question import Question
 from backend.models.response import Response
 from backend.api import candidate as candidate_api
 from backend.api import evaluation as evaluation_api
+from backend.api import interview as interview_api
+from backend.api import question as question_api
 
 
 class CandidateAuthFlowTests(unittest.TestCase):
@@ -38,14 +40,22 @@ class CandidateAuthFlowTests(unittest.TestCase):
         self.session_factory_patch.start()
         app = FastAPI()
         app.include_router(candidate_api.router)
+        app.include_router(interview_api.router)
+        app.include_router(question_api.router)
         app.include_router(evaluation_api.router)
         self.client = TestClient(app)
         self.evaluation_session_patch = patch.object(evaluation_api, "sessionLocal", self.Session)
         self.evaluation_session_patch.start()
+        self.interview_session_patch = patch.object(interview_api, "sessionLocal", self.Session)
+        self.interview_session_patch.start()
+        self.question_session_patch = patch.object(question_api, "sessionLocal", self.Session)
+        self.question_session_patch.start()
 
     def tearDown(self):
         self.client.close()
         self.evaluation_session_patch.stop()
+        self.interview_session_patch.stop()
+        self.question_session_patch.stop()
         self.session_factory_patch.stop()
         Base.metadata.drop_all(self.engine)
         self.engine.dispose()
@@ -65,6 +75,11 @@ class CandidateAuthFlowTests(unittest.TestCase):
         self.assertEqual(signup.status_code, 200, signup.text)
         candidate_id = signup.json()["id"]
         self.assertEqual(signup.json()["phone_number"], "+919876543210")
+        with self.Session() as session:
+            candidate = session.get(Candidate, candidate_id)
+            candidate.email_verified = True
+            candidate.phone_verified = True
+            session.commit()
 
         email_login = self.client.post("/candidates/login", json={
             "email": "ruchi@example.com", "password": "original-pass-8",
@@ -99,6 +114,32 @@ class CandidateAuthFlowTests(unittest.TestCase):
         with self.Session() as session:
             self.assertEqual(session.execute(select(PasswordResetCode)).scalars().all(), [])
 
+    def test_email_and_mobile_verification_codes_work_independently(self):
+        signup = self.client.post("/candidates", json={
+            "name": "Verify Test", "email": "verify@example.com", "phone_number": "+91 98765 43210",
+            "password": "strong-pass-8",
+        })
+        self.assertEqual(signup.status_code, 200, signup.text)
+        candidate_id = signup.json()["id"]
+        self.assertFalse(signup.json()["email_verified"])
+        sent = {}
+        with patch.object(candidate_api, "reset_delivery_configured", return_value=True), patch.object(
+            candidate_api, "deliver_verification_code", side_effect=lambda destination, code, is_email: sent.__setitem__(destination, code),
+        ):
+            email_request = self.client.post("/candidates/verification/request", json={"identifier": "verify@example.com"})
+            phone_request = self.client.post("/candidates/verification/request", json={"identifier": "+91 98765 43210"})
+            self.assertEqual(email_request.status_code, 200, email_request.text)
+            self.assertEqual(phone_request.status_code, 200, phone_request.text)
+            email_confirm = self.client.post("/candidates/verification/confirm", json={"identifier": "verify@example.com", "code": sent["verify@example.com"]})
+            self.assertEqual(email_confirm.status_code, 200, email_confirm.text)
+            self.assertTrue(email_confirm.json()["email_verified"])
+            self.assertFalse(email_confirm.json()["phone_verified"])
+            phone_confirm = self.client.post("/candidates/verification/confirm", json={"identifier": "+91 98765 43210", "code": sent["+919876543210"]})
+        self.assertEqual(phone_confirm.status_code, 200, phone_confirm.text)
+        self.assertTrue(phone_confirm.json()["phone_verified"])
+        self.assertEqual(self.client.post("/candidates/login", json={"email": "verify@example.com", "password": "strong-pass-8"}).status_code, 200)
+        self.assertEqual(self.client.post("/candidates/login", json={"email": "+91 98765 43210", "password": "strong-pass-8"}).status_code, 200)
+
     def test_interview_feedback_is_a_single_idempotent_report(self):
         with self.Session() as session:
             candidate = Candidate(name="Report Test", email="report@example.com", password="hashed")
@@ -126,6 +167,92 @@ class CandidateAuthFlowTests(unittest.TestCase):
         with self.Session() as session:
             self.assertEqual(len(session.execute(select(Evaluation)).scalars().all()), 1)
             self.assertEqual(len(session.execute(select(InterviewResult)).scalars().all()), 1)
+
+    def test_google_login_creates_and_reuses_verified_candidate(self):
+        google_user = {
+            "email": "google@example.com",
+            "emailVerified": True,
+            "displayName": "Google Candidate",
+            "providerUserInfo": [{"providerId": "google.com"}],
+        }
+        with patch.object(candidate_api, "verify_firebase_id_token", return_value=google_user):
+            first = self.client.post("/candidates/google-login", json={"id_token": "verified-firebase-id-token"})
+            second = self.client.post("/candidates/google-login", json={"id_token": "verified-firebase-id-token"})
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(first.json()["candidate_id"], second.json()["candidate_id"])
+        self.assertEqual(first.json()["name"], "Google Candidate")
+        with self.Session() as session:
+            self.assertEqual(len(session.execute(select(Candidate)).scalars().all()), 1)
+
+    def test_google_login_rejects_unverified_or_non_google_identity(self):
+        invalid_users = [
+            {"email": "google@example.com", "emailVerified": False, "providerUserInfo": [{"providerId": "google.com"}]},
+            {"email": "google@example.com", "emailVerified": True, "providerUserInfo": [{"providerId": "password"}]},
+        ]
+        for user in invalid_users:
+            with patch.object(candidate_api, "verify_firebase_id_token", return_value=user):
+                response = self.client.post("/candidates/google-login", json={"id_token": "verified-firebase-id-token"})
+            self.assertEqual(response.status_code, 401)
+        with self.Session() as session:
+            self.assertEqual(session.execute(select(Candidate)).scalars().all(), [])
+
+    def test_selected_interview_skills_persist_and_tag_generated_questions(self):
+        signup = self.client.post("/candidates", json={
+            "name": "Skill Test", "email": "skills@example.com", "password": "strong-pass-8",
+        })
+        interview = self.client.post("/interviews", json={
+            "candidate_id": signup.json()["id"], "company": "Acme", "role": "Frontend Engineer",
+            "skills": ["React", "TypeScript"],
+        })
+        self.assertEqual(interview.status_code, 200, interview.text)
+        self.assertEqual(interview.json()["skills"], ["React", "TypeScript"])
+        generated = [
+            SimpleNamespace(question=f"Question {index}", skill="not-selected")
+            for index in range(5)
+        ]
+        with patch.object(question_api, "generate_questions", return_value=generated) as generate:
+            response = self.client.post(f"/interviews/{interview.json()['id']}/generate-questions")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([item["skill"] for item in response.json()], ["React", "TypeScript", "React", "TypeScript", "React"])
+        generate.assert_called_once_with(role="Frontend Engineer", company="Acme", skills=["React", "TypeScript"])
+
+    def test_question_generation_accepts_string_results_from_generator(self):
+        signup = self.client.post("/candidates", json={
+            "name": "String Generator", "email": "strings@example.com", "password": "strong-pass-8",
+        })
+        interview = self.client.post("/interviews", json={
+            "candidate_id": signup.json()["id"], "company": "Acme", "role": "Engineer",
+            "skills": ["Java", "Spring Boot"],
+        })
+        with patch.object(question_api, "generate_questions", return_value=[f"Question {index}" for index in range(5)]):
+            response = self.client.post(f"/interviews/{interview.json()['id']}/generate-questions")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()[0]["question"], "Question 0")
+        self.assertEqual(response.json()[0]["skill"], "Java")
+        self.assertEqual(response.json()[1]["skill"], "Spring Boot")
+
+    def test_deleting_interview_removes_its_questions_answers_and_result(self):
+        signup = self.client.post("/candidates", json={
+            "name": "Delete Test", "email": "delete@example.com", "password": "strong-pass-8",
+        })
+        interview = self.client.post("/interviews", json={
+            "candidate_id": signup.json()["id"], "company": "Example", "role": "Engineer",
+        })
+        with self.Session() as session:
+            question = Question(interview_id=interview.json()["id"], question="Describe a design tradeoff")
+            session.add(question)
+            session.flush()
+            session.add(Response(question_id=question.id, answer="I would compare the constraints."))
+            session.add(InterviewResult(interview_id=interview.json()["id"], total_score=81))
+            session.commit()
+        deleted = self.client.delete(f"/interviews/{interview.json()['id']}")
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        with self.Session() as session:
+            self.assertEqual(session.execute(select(Interview).where(Interview.id == interview.json()["id"])).scalars().all(), [])
+            self.assertEqual(session.execute(select(Question)).scalars().all(), [])
+            self.assertEqual(session.execute(select(Response)).scalars().all(), [])
+            self.assertEqual(session.execute(select(InterviewResult)).scalars().all(), [])
 
 
 if __name__ == "__main__":
