@@ -1,3 +1,6 @@
+import os
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from backend.api import candidate
 from backend.api import interview
@@ -15,15 +18,21 @@ from backend.models.password_reset_code import PasswordResetCode
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 
+load_dotenv()
+
 app = FastAPI()
 backend = app
 
+configured_origins = [origin.strip().rstrip("/") for origin in os.getenv("FRONTEND_ORIGINS", "").split(",") if origin.strip()]
+allowed_origins = list(dict.fromkeys([
+    "http://localhost:5173",
+    "https://d2roa503h8m1gf.cloudfront.net",
+    *configured_origins,
+]))
+
 app.add_middleware(    
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "https://d2roa503h8m1gf.cloudfront.net",
-    ],
+    allow_origins=allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

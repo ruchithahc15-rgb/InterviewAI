@@ -123,6 +123,7 @@ Create `.env` in the repository root:
 DATABASE_URL=postgresql://username:password@localhost:5432/ai_interview
 GOOGLE_API_KEY=your_gemini_api_key
 DEEPGRAM_API_KEY=your_deepgram_api_key
+FRONTEND_ORIGINS=http://localhost:5173,https://your-app.vercel.app
 
 # Optional account recovery / verification
 SMTP_HOST=
