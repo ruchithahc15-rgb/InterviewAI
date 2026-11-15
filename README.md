@@ -1,363 +1,162 @@
-# AI-Powered Interview Evaluator
+> AI-powered technical interview practice that turns every answer into actionable feedback.
 
-An end-to-end AI-powered mock technical interview backendlication. A candidate can create an account, choose a role and company, receive AI-generated technical questions, answer them by typing or speaking, and receive an AI-based evaluation and interview score at the end.
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/frontend-React-61DAFB?logo=react&logoColor=111827)](https://react.dev/)
+[![PostgreSQL](https://img.shields.io/badge/database-PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Gemini](https://img.shields.io/badge/AI-Gemini-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
 
-The project started as a FastAPI and PostgreSQL backend and gradually grew into a full-stack backendlication with AI question generation, AI answer evaluation, speech-to-text, a React frontend, authentication, and cloud deployment.
+InterviewAI is a full-stack mock interview platform for developers and technical candidates. Choose a role, company, and skills; receive five research-informed questions; answer by typing or speaking; then get a structured score, strengths, and improvement feedback.
 
-## What it does
+If this project helps you prepare, learn from the architecture, or build your own AI product, consider giving it a ⭐.
+
+## Why it is useful
+
+- Practice realistic, role-specific technical interviews in minutes.
+- Use typed answers or browser microphone recording with Deepgram transcription.
+- Get consistent scoring across accuracy, relevance, technical quality, confidence, and grammar.
+- Revisit questions and answers in the Question Bank.
+- Track progress in Analytics and review completed sessions from the Dashboard.
+- Export an interview record as DOC or print it as a PDF.
+- Keep candidate data isolated by interview and candidate account.
+
+## Product flow
 
 ```text
-Candidate
-   |
-   v
-Signup / Login
-   |
-   v
-Choose role + company
-   |
-   v
-Create Interview
-   |
-   v
-Gemini generates 5 questions
-   |
-   v
-Answer each question
-   |--------------------|
-   |                    |
- Type answer       Record answer
-                        |
-                    Deepgram
-                        |
-                        v
-                   Transcript
-                        |
-   |--------------------|
-   |
-   v
-Response
-   |
-   v
-Gemini Evaluation
-   |
-   v
-Interview Score
-   |
-   v
-Results
+Sign up / Sign in
+        ↓
+Choose role, company, and skills
+        ↓
+Generate 5 AI questions
+        ↓
+Answer by typing or speaking
+        ↓
+Transcribe + evaluate each response
+        ↓
+Review score, feedback, history, and progress
 ```
 
-A candidate can also skip a question. Skipped questions are stored as responses without an answer and are not sent for AI evaluation.
+## Highlights
 
-## Features
+### Candidate experience
 
-### Candidate accounts and authentication
+- Email/password authentication with Argon2 password hashing.
+- Optional phone verification, password reset, and Google sign-in through Firebase.
+- Dashboard with recent activity, feedback, and practice statistics.
+- Interview history with in-progress and completed sessions.
+- Question Bank with visible session selection, saved answers, research references, and exports.
+- Profile editing, local profile photo, and account/session controls.
 
-- Candidate signup
-- Candidate login
-- Password hashing with Argon2 using `pwdlib`
-- Candidate-specific interview flow
-- Lightweight frontend authentication flow
+### AI interview engine
 
-### Interview generation
+- Google Gemini generates exactly five structured questions per session.
+- Optional Google Search grounding adds public company and role context.
+- Deepgram converts recorded answers into text.
+- Gemini evaluates answers using structured output rather than free-form text.
+- Skipped or empty answers are retained and scored appropriately.
 
-Each time a candidate starts an interview, a new `Interview` record is created.
+### Scoring model
 
-The interview stores:
-
-- Candidate
-- Company
-- Role
-- Status
-
-Gemini generates exactly 5 technical questions for the interview.
-
-### Answering questions
-
-Candidates can:
-
-- Type an answer
-- Record an answer using the browser microphone
-- Skip a question
-
-The frontend uses the browser Speech Synthesis API to read questions aloud.
-
-Recorded answers are sent to Deepgram for speech-to-text transcription. The transcript is then stored as the candidate response.
-
-### AI evaluation
-
-Gemini evaluates submitted answers on:
-
-- Accuracy
-- Relevance
-- Technical quality
-- Grammar
-- Confidence
-- Filler-word count
-
-The evaluation also provides feedback and strengths.
-
-The scoring weights are:
-
-| Category | Weight |
-|---|---:|
+| Dimension | Weight |
+| --- | ---: |
 | Accuracy | 30% |
 | Relevance | 30% |
-| Technical | 20% |
+| Technical quality | 20% |
 | Confidence | 10% |
 | Grammar | 10% |
 
-The final interview score is calculated across the interview's questions. Skipped questions contribute zero to the final score.
-
-## Tech Stack
-
-### Backend
-
-- Python
-- FastAPI
-- SQLAlchemy
-- PostgreSQL
-- Pydantic
-- Gemini API
-- Deepgram
-- `pwdlib` with Argon2
-- Gunicorn
-- Uvicorn
-
-### Frontend
-
-- React
-- Vite
-- React Router
-- Axios
-- Tailwind CSS
-- Browser Speech Synthesis API
-- Browser MediaRecorder API
-
-### Database
-
-- PostgreSQL
-- Neon
-
-### Cloud / Infrastructure
-
-- Amazon EC2
-- Amazon S3
-- Amazon CloudFront
-- Nginx
-- Let's Encrypt / Certbot
-- AWS IAM
-- systemd
-
-## Project Structure
+## Architecture
 
 ```text
-AI-Powered-Interview-Evaluator/
-|
+React + Vite frontend
+          │ Axios / REST
+          ▼
+FastAPI backend ───────► Google Gemini
+          │              Deepgram
+          ▼
+SQLAlchemy ────────────► PostgreSQL
+```
+
+The backend owns AI calls, validation, scoring, persistence, and authentication. The frontend stores only lightweight browser session/profile UI state; Gemini, Deepgram, database, and SMTP/Twilio secrets stay server-side.
+
+## Tech stack
+
+| Layer | Technologies |
+| --- | --- |
+| Frontend | React 19, Vite, React Router, Axios, CSS, browser Speech Synthesis and MediaRecorder APIs |
+| Backend | Python, FastAPI, SQLAlchemy, Pydantic, Uvicorn/Gunicorn |
+| Data | PostgreSQL; tables for candidates, interviews, questions, responses, evaluations, results, and reset codes |
+| AI / voice | Google Gemini, Gemini Search grounding, Deepgram speech-to-text |
+| Auth | Argon2 password hashing, Firebase Google sign-in, email/SMS verification hooks |
+
+## Project structure
+
+```text
+InterviewAI/
 ├── backend/
-│   ├── LLM/
-│   │   ├── evaluation.py
-│   │   └── question.py
-│   │
-│   ├── api/
-│   │   ├── candidate.py
-│   │   ├── evaluation.py
-│   │   ├── interview.py
-│   │   ├── question.py
-│   │   └── response.py
-│   │
-│   ├── models/
-│   │   ├── candidate.py
-│   │   ├── evaluation.py
-│   │   ├── interview.py
-│   │   ├── interview_result.py
-│   │   ├── question.py
-│   │   └── response.py
-│   │
-│   ├── schemas/
-│   │   ├── candidate.py
-│   │   ├── evaluation.py
-│   │   ├── interview.py
-│   │   ├── interview_result.py
-│   │   ├── question.py
-│   │   └── response.py
-│   │
-│   ├── services/
-│   │   ├── auth.py
-│   │   └── scoring.py
-│   │
+│   ├── api/              # REST endpoints
+│   ├── LLM/              # Gemini question generation and evaluation
+│   ├── models/           # SQLAlchemy models
+│   ├── schemas/          # Pydantic request/response schemas
+│   ├── services/         # Auth, scoring, delivery, Firebase helpers
 │   ├── database.py
 │   └── main.py
-│
 ├── frontend/
-│   ├── src/
-│   │   ├── api/
-│   │   ├── hooks/
-│   │   ├── pages/
-│   │   ├── backend.jsx
-│   │   └── main.jsx
-│   └── package.json
-│
+│   ├── src/api/          # API and Firebase clients
+│   ├── src/components/   # Shared shell, auth, and UI components
+│   ├── src/pages/        # Dashboard, interview, results, analytics, profile
+│   └── src/utils/        # Interview export helpers
 ├── requirements.txt
 └── README.md
 ```
 
-## Database Design
+## Run locally
 
-```text
-Candidate
-   |
-   | 1-to-many
-   v
-Interview
-   |
-   | 1-to-many
-   v
-Question
-   |
-   | 1-to-many
-   v
-Response
-   |
-   | 1-to-1
-   v
-Evaluation
+### 1. Start PostgreSQL
 
-Interview
-   |
-   | 1-to-1
-   v
-InterviewResult
+Create a database named `ai_interview`, or use any PostgreSQL database and update `DATABASE_URL`.
+
+### 2. Configure the backend
+
+Create `.env` in the repository root:
+
+```env
+DATABASE_URL=postgresql://username:password@localhost:5432/ai_interview
+GOOGLE_API_KEY=your_gemini_api_key
+DEEPGRAM_API_KEY=your_deepgram_api_key
+
+# Optional account recovery / verification
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM_EMAIL=
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_FROM_NUMBER=
 ```
 
-An `Interview` represents one complete attempt.
-
-If the same candidate starts another interview, a new `Interview` record is created. This keeps questions, responses, evaluations, and the final score tied to that specific attempt.
-
-## API Endpoints
-
-### Candidates
-
-```text
-POST   /candidates
-GET    /candidates
-GET    /candidates/{id}
-PUT    /candidates/{id}
-DELETE /candidates/{id}
-```
-
-### Authentication
-
-```text
-POST /candidates/login
-```
-
-### Interviews
-
-```text
-POST   /interviews
-GET    /interviews
-GET    /interviews/{id}
-PUT    /interviews/{id}
-DELETE /interviews/{id}
-```
-
-### Question Generation
-
-```text
-POST /interviews/{id}/generate-questions
-```
-
-### Questions
-
-```text
-POST   /questions
-GET    /questions
-GET    /questions/{id}
-PUT    /questions/{id}
-DELETE /questions/{id}
-```
-
-### Responses
-
-```text
-POST   /responses
-GET    /responses
-GET    /responses/{id}
-DELETE /responses/{id}
-```
-
-### Evaluation
-
-The evaluation endpoint receives a response ID, retrieves the associated question and answer, sends the relevant information to Gemini, validates the structured result, and stores the evaluation.
-
-## Running the Backend Locally
-
-
-### 2. Create a virtual environment
-
-Windows:
+Install and start the API:
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-```
-
-Linux / macOS:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 2. Install dependencies
-
-```bash
 pip install -r requirements.txt
+uvicorn backend.main:app --reload
 ```
 
-### 3. Configure environment variables
+API: `http://localhost:8000`  ·  Swagger: `http://localhost:8000/docs`
 
-Create a `.env` file:
+### 3. Start the frontend
 
-```text
-DATABASE_URL=postgresql://username:password@localhost:5432/interview_evaluator
-GOOGLE_API_KEY=your_google_api_key
-DEEPGRAM_API_KEY=your_deepgram_api_key
-```
-
-Never commit `.env` files or API keys to GitHub.
-
-### 4. Start the backend
-
-```bash
-uvicorn backend.main:backend --reload
-```
-
-The API will normally be available at:
-
-```text
-http://localhost:8000
-```
-
-Swagger documentation:
-
-```text
-http://localhost:8000/docs
-```
-
-## Running the Frontend Locally
-
-Open a second terminal:
-
-```bash
+```powershell
 cd frontend
 npm install
+npm run dev
 ```
 
-For local development, configure:
+Optional frontend `.env` values:
 
-```text
+```env
 VITE_API_BASE_URL=http://localhost:8000
 VITE_FIREBASE_API_KEY=
 VITE_FIREBASE_AUTH_DOMAIN=
@@ -367,378 +166,49 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 ```
 
-Start the development server:
+Open the Vite URL shown in the terminal, usually `http://localhost:5173`.
+
+## API surface
+
+The FastAPI backend includes endpoints for:
+
+- Candidate signup, login, profile updates, verification, password reset, and Google login.
+- Interview creation, retrieval, update, and deletion.
+- AI question generation and question-bank retrieval.
+- Typed/transcribed response submission.
+- Per-answer evaluation and interview-level results.
+
+Run the server and open `/docs` for the live OpenAPI contract.
+
+## Security notes
+
+- Passwords are hashed with `pwdlib` before storage; plaintext passwords are never persisted.
+- API keys and database URLs belong in environment variables, never in source control.
+- The frontend stores only a candidate ID, display name, and local profile photo for the current browser experience.
+- For production, add server-side sessions or signed tokens, authorization checks on every candidate-owned resource, rate limiting, migrations, monitoring, and managed secret storage.
+
+Never commit `.env` files or expose real API keys in issues, screenshots, or documentation.
+
+## Verification
+
+Frontend checks:
 
 ```bash
-npm run dev
-```
-
-## Production Architecture
-
-The backendlication is deployed as a full-stack cloud backendlication using AWS for hosting and Neon PostgreSQL for the production database.
-
-```text
-                    Users
-                      |
-                      v
-             CloudFront (HTTPS)
-                      |
-                      v
-              S3 Static Frontend
-                      |
-                API requests
-                      |
-                      v
-              Nginx on EC2
-                      |
-                      v
-       Gunicorn + Uvicorn Workers
-                      |
-          +-----------+-----------+
-          |                       |
-          v                       v
-   Neon PostgreSQL          Gemini / Deepgram
-```
-
-### Frontend
-
-The React frontend is built with Vite and deployed using:
-
-- Amazon S3
-- Amazon CloudFront
-- CloudFront Origin Access Control (OAC)
-
-The S3 bucket is private. CloudFront serves the frontend without making the bucket publicly accessible.
-
-### Backend
-
-The FastAPI backend runs on Amazon EC2 using:
-
-- Gunicorn
-- Uvicorn workers
-- Nginx
-- systemd
-- Let's Encrypt / Certbot
-
-Nginx receives public HTTPS traffic and forwards requests to FastAPI running privately on:
-
-```text
-127.0.0.1:8000
-```
-
-Port `8000` is not exposed publicly.
-
-systemd keeps the backend service running and restarts it if the process stops.
-
-### Database
-
-The production backendlication uses Neon PostgreSQL.
-
-The backend connects to Neon using SQLAlchemy and `psycopg2`.
-
-### AI Services
-
-The backendlication uses:
-
-- Google Gemini for question generation and answer evaluation
-- Deepgram for speech-to-text transcription
-
-API keys are stored as backend environment variables and are not included in the frontend build.
-
-## Production Environment Variables
-
-### Backend
-
-```text
-GOOGLE_API_KEY=
-DEEPGRAM_API_KEY=
-DATABASE_URL=
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_USERNAME=
-SMTP_PASSWORD=
-SMTP_FROM_EMAIL=
-TWILIO_ACCOUNT_SID=
-TWILIO_AUTH_TOKEN=
-TWILIO_FROM_NUMBER=
-# Or set TWILIO_MESSAGING_SERVICE_SID instead of TWILIO_FROM_NUMBER
-TWILIO_MESSAGING_SERVICE_SID=
-FIREBASE_WEB_API_KEY=
-```
-
-These values are stored on the backend server and are not committed to the repository.
-Password reset codes are delivered by SMTP for email accounts and Twilio for phone accounts. Configure the matching delivery settings before enabling password recovery in production.
-Google Authentication verifies Firebase ID tokens on the backend before linking a verified Google email to an InterviewAI candidate account. Set `FIREBASE_WEB_API_KEY` on the backend and the matching `VITE_FIREBASE_*` web configuration on the frontend. Enable the Google provider and authorize the local and production domains in Firebase Authentication.
-
-### Frontend
-
-```text
-VITE_API_BASE_URL=
-VITE_FIREBASE_API_KEY=
-VITE_FIREBASE_AUTH_DOMAIN=
-VITE_FIREBASE_PROJECT_ID=
-VITE_FIREBASE_STORAGE_BUCKET=
-VITE_FIREBASE_MESSAGING_SENDER_ID=
-VITE_FIREBASE_APP_ID=
-```
-
-The production frontend is built with the backend API URL supplied through the Vite production environment.
-
-The frontend does not contain Gemini, Deepgram, or database credentials.
-
-## Production Deployment Flow
-
-Frontend:
-
-```text
-React source
-     |
-     v
+cd frontend
+npm run lint
 npm run build
-     |
-     v
-Vite production build
-     |
-     v
-Amazon S3
-     |
-     v
-CloudFront
-     |
-     v
-User's browser
 ```
 
-Backend:
+Backend tests:
 
-```text
-FastAPI backendlication
-     |
-     v
-EC2
-     |
-     v
-Gunicorn
-     |
-     v
-Uvicorn workers
-     |
-     v
-Nginx
-     |
-     v
-HTTPS
+```bash
+python -m unittest discover -s backend/tests
 ```
 
-Backend integrations:
+## Roadmap
 
-```text
-FastAPI
-   |
-   +-----> Neon PostgreSQL
-   |
-   +-----> Gemini
-   |
-   +-----> Deepgram
-```
-
-## HTTPS and Certificate Renewal
-
-The backend is served through HTTPS using a Let's Encrypt certificate.
-
-Certbot is configured with a systemd timer to periodically check for certificate renewal.
-
-After renewal, Nginx is reloaded so that the renewed certificate is used.
-
-## Security
-
-The current deployment includes:
-
-- HTTPS for public backend traffic
-- Private S3 bucket
-- CloudFront Origin Access Control
-- Port `8000` kept private
-- SSH restricted to the administrator's IP
-- API keys stored in environment variables
-- `.env` files excluded from Git
-- AWS IAM permissions scoped to the required deployment resources
-
-Future security improvements include stronger authentication and authorization, rate limiting, secret management, and additional API hardening.
-
-## Testing
-
-### Backend testing
-
-Swagger / OpenAPI was used to test:
-
-- Candidate operations
-- Login
-- Interview creation
-- Question generation
-- Response submission
-- AI evaluation
-- Invalid resource IDs
-- Skipped questions
-- Error handling
-
-### Database verification
-
-PostgreSQL data was inspected during development to verify that API operations created and modified the expected records.
-
-### Production end-to-end testing
-
-The deployed backendlication was tested through the production frontend.
-
-The complete flow was tested:
-
-```text
-Signup
-  |
-  v
-Login
-  |
-  v
-Create Interview
-  |
-  v
-Generate Questions
-  |
-  v
-Answer Questions
-  |
-  +----> Type Answer
-  |
-  +----> Record Audio
-  |          |
-  |       Deepgram
-  |          |
-  |       Transcript
-  |
-  +----> Skip Question
-  |
-  v
-Submit Response
-  |
-  v
-AI Evaluation
-  |
-  v
-Results
-```
-
-Audio handling was also tested with unsuccessful audio submissions followed by a successful recording, confirming that the backendlication could recover from failed transcription attempts.
-
-## Development Lessons
-
-### SQLAlchemy relationships
-
-While developing the ORM relationships, mbackender configuration issues highlighted the importance of correct model imports and relationship configuration.
-
-### FastAPI response validation
-
-Response validation was debugged by comparing:
-
-```text
-Database object
-      |
-      v
-Endpoint return value
-      |
-      v
-Pydantic response model
-```
-
-This helped ensure that list endpoints return list-compatible schemas while single-resource endpoints return the correct object schema.
-
-### Database transactions
-
-Database operations use explicit commit, refresh, rollback, and session cleanup where backendropriate.
-
-A failed transaction must be rolled back before the session can safely continue.
-
-### Production database connectivity
-
-A stale PostgreSQL connection was encountered during deployment. Restarting the backendlication restored connectivity.
-
-This highlighted the importance of reliable database connection management when using a managed PostgreSQL service.
-
-### AWS IAM
-
-The EC2 instance uses an IAM role rather than storing long-lived AWS access keys on the server.
-
-The role provides the permissions required for frontend deployment operations such as S3 uploads and CloudFront invalidation.
-
-## Project Status
-
-The backendlication has been implemented, deployed, and tested through the complete production interview flow.
-
-### Completed
-
-- Candidate signup
-- Candidate login
-- Password hashing with Argon2
-- Interview creation
-- Gemini question generation
-- Five-question interview flow
-- Typed answers
-- Recorded answers
-- Speech-to-text transcription
-- Skip-question handling
-- Gemini answer evaluation
-- Structured AI evaluation
-- Interview scoring
-- Results page
-- React frontend
-- Neon PostgreSQL production database
-- AWS S3 frontend hosting
-- CloudFront distribution
-- EC2 backend hosting
-- Nginx reverse proxy
-- Gunicorn + Uvicorn workers
-- HTTPS with Let's Encrypt
-- Automatic certificate renewal
-- Production end-to-end testing
-- Git/GitHub version control
-
-### Future Improvements
-
-- Stronger authentication and authorization
-- Server-side session/token management
-- Database migrations with Alembic
-- More comprehensive error handling
-- LLM retry and timeout strategies
-- Rate limiting
-- Production monitoring and logging
-- Stronger API validation
-- More robust result presentation
-- Additional security hardening
-- Optional RAG-based interview customization
-
-## Why I Built This
-
-The project is mainly a practical way to learn how the pieces of a full-stack AI backendlication fit together.
-
-Instead of treating the LLM as the whole backendlication, the project puts it inside a normal backend architecture with a relational database, API layer, validation, audio processing, frontend, cloud infrastructure, and external AI services.
-
-The interesting problems are therefore not only about calling an LLM.
-
-They also include:
-
-- Designing relational data models
-- Keeping separate interview attempts independent
-- Connecting questions to responses
-- Handling skipped questions
-- Processing audio input
-- Handling failed transcription
-- Validating structured LLM output
-- Persisting AI evaluations
-- Calculating interview scores
-- Connecting React to FastAPI
-- Deploying services to AWS
-- Configuring HTTPS and reverse proxies
-- Managing environment variables
-- Configuring IAM permissions
-
-The project represents an attempt to understand the complete lifecycle of an AI-powered backendlication rather than only the AI API call.
-=======
-# InterviewAI
+- Server-side session/token authentication and stronger resource authorization.
+- Alembic migrations and production-grade observability.
+- Interview difficulty controls and deeper role-specific personalization.
+- More evaluation trends, coaching plans, and shareable reports.
+- Expanded test coverage and CI automation.
