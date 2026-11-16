@@ -18,7 +18,6 @@ from backend.models.candidate import Candidate
 from backend.models.evaluation import Evaluation
 from backend.models.interview import Interview
 from backend.models.interview_result import InterviewResult
-from backend.models.password_reset_code import PasswordResetCode
 from backend.models.question import Question
 from backend.models.response import Response
 from backend.api import candidate as candidate_api
@@ -60,7 +59,7 @@ class CandidateAuthFlowTests(unittest.TestCase):
         Base.metadata.drop_all(self.engine)
         self.engine.dispose()
 
-    def test_signup_email_and_phone_sign_in_and_password_reset(self):
+    def test_signup_email_and_phone_sign_in(self):
         invalid_phone = self.client.post("/candidates", json={
             "name": "Invalid Phone", "email": "invalid@example.com",
             "phone_number": "+1 202 555 0144", "password": "original-pass-8",
@@ -93,52 +92,6 @@ class CandidateAuthFlowTests(unittest.TestCase):
         self.assertEqual(phone_login.status_code, 200, phone_login.text)
         self.assertEqual(phone_login.json()["candidate_id"], candidate_id)
 
-        with patch.object(candidate_api, "deliver_reset_code") as send_code, patch.object(candidate_api, "reset_delivery_configured", return_value=True), patch.object(candidate_api.secrets, "choice", return_value="4"):
-            request_code = self.client.post("/candidates/password-reset/request", json={"identifier": "+91 98765 43210"})
-            self.assertEqual(request_code.status_code, 200, request_code.text)
-            send_code.assert_called_once_with("+919876543210", "444444", False)
-
-        reset = self.client.post("/candidates/password-reset/confirm", json={
-            "identifier": "+91 98765 43210", "code": "444444", "new_password": "new-passphrase-9",
-        })
-        self.assertEqual(reset.status_code, 200, reset.text)
-
-        old_password = self.client.post("/candidates/login", json={
-            "email": "ruchi@example.com", "password": "original-pass-8",
-        })
-        new_password = self.client.post("/candidates/login", json={
-            "email": "ruchi@example.com", "password": "new-passphrase-9",
-        })
-        self.assertEqual(old_password.status_code, 401)
-        self.assertEqual(new_password.status_code, 200, new_password.text)
-        with self.Session() as session:
-            self.assertEqual(session.execute(select(PasswordResetCode)).scalars().all(), [])
-
-    def test_email_and_mobile_verification_codes_work_independently(self):
-        signup = self.client.post("/candidates", json={
-            "name": "Verify Test", "email": "verify@example.com", "phone_number": "+91 98765 43210",
-            "password": "strong-pass-8",
-        })
-        self.assertEqual(signup.status_code, 200, signup.text)
-        candidate_id = signup.json()["id"]
-        self.assertFalse(signup.json()["email_verified"])
-        sent = {}
-        with patch.object(candidate_api, "reset_delivery_configured", return_value=True), patch.object(
-            candidate_api, "deliver_verification_code", side_effect=lambda destination, code, is_email: sent.__setitem__(destination, code),
-        ):
-            email_request = self.client.post("/candidates/verification/request", json={"identifier": "verify@example.com"})
-            phone_request = self.client.post("/candidates/verification/request", json={"identifier": "+91 98765 43210"})
-            self.assertEqual(email_request.status_code, 200, email_request.text)
-            self.assertEqual(phone_request.status_code, 200, phone_request.text)
-            email_confirm = self.client.post("/candidates/verification/confirm", json={"identifier": "verify@example.com", "code": sent["verify@example.com"]})
-            self.assertEqual(email_confirm.status_code, 200, email_confirm.text)
-            self.assertTrue(email_confirm.json()["email_verified"])
-            self.assertFalse(email_confirm.json()["phone_verified"])
-            phone_confirm = self.client.post("/candidates/verification/confirm", json={"identifier": "+91 98765 43210", "code": sent["+919876543210"]})
-        self.assertEqual(phone_confirm.status_code, 200, phone_confirm.text)
-        self.assertTrue(phone_confirm.json()["phone_verified"])
-        self.assertEqual(self.client.post("/candidates/login", json={"email": "verify@example.com", "password": "strong-pass-8"}).status_code, 200)
-        self.assertEqual(self.client.post("/candidates/login", json={"email": "+91 98765 43210", "password": "strong-pass-8"}).status_code, 200)
 
     def test_interview_feedback_is_a_single_idempotent_report(self):
         with self.Session() as session:

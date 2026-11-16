@@ -14,7 +14,6 @@ from backend.models.question import Question
 from backend.models.response import Response
 from backend.models.evaluation import Evaluation
 from backend.models.interview_result import InterviewResult
-from backend.models.password_reset_code import PasswordResetCode
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 

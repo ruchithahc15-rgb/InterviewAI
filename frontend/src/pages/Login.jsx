@@ -23,15 +23,6 @@ function Login() {
   const [remember, setRemember] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
-  const [resetOpen, setResetOpen] = useState(false);
-  const [resetStep, setResetStep] = useState("request");
-  const [resetCode, setResetCode] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [resetMessage, setResetMessage] = useState(null);
-  const [verificationOpen, setVerificationOpen] = useState(false);
-  const [verificationCode, setVerificationCode] = useState("");
-  const [verificationRequested, setVerificationRequested] = useState(false);
-  const [verificationMessage, setVerificationMessage] = useState("");
   const [showIntro, setShowIntro] = useState(() => {
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return false;
     try { return !introPlayedInMemory && sessionStorage.getItem("interviewai-intro-seen") !== "true"; }
@@ -63,147 +54,32 @@ function Login() {
       navigate(location.state?.from || "/welcome", { replace: true });
     } catch (err) {
       setError(err.response?.data?.detail || "Something went wrong signing in. Try again.");
-      if (err.response?.status === 403) setVerificationOpen(true);
       console.error(err);
     } finally { setIsSubmitting(false); }
   }
 
-  async function requestAccountVerification(event) {
-    event.preventDefault();
-    setError(null);
-    setVerificationMessage("");
-    setIsSubmitting(true);
-    try {
-      const { data } = await apiClient.post("/candidates/verification/request", { identifier: identifier.trim() });
-      setVerificationRequested(true);
-      setVerificationMessage(data.message || "A verification code was sent.");
-    } catch (err) {
-      setError(err.response?.data?.detail || "We couldn't send a verification code. Try again.");
-    } finally { setIsSubmitting(false); }
-  }
 
-  async function confirmAccountVerification(event) {
-    event.preventDefault();
-    setError(null);
-    setVerificationMessage("");
-    setIsSubmitting(true);
-    try {
-      const { data } = await apiClient.post("/candidates/verification/confirm", { identifier: identifier.trim(), code: verificationCode.trim() });
-      setVerificationMessage(data.message || "Contact verified. You can sign in now.");
-      setVerificationOpen(false);
-      setVerificationRequested(false);
-      setVerificationCode("");
-      setError(null);
-    } catch (err) {
-      setError(err.response?.data?.detail || "That code couldn't be verified. Try again.");
-    } finally { setIsSubmitting(false); }
-  }
-
-  async function requestResetCode(event) {
-    event.preventDefault();
-    setError(null);
-    setResetMessage(null);
-    setIsSubmitting(true);
-    try {
-      const { data } = await apiClient.post("/candidates/password-reset/request", { identifier: identifier.trim() });
-      setResetMessage(data.message || "A verification code was sent.");
-      setResetStep("verify");
-    } catch (err) {
-      setError(err.response?.data?.detail || "We couldn't send a code. Check your details and try again.");
-    } finally { setIsSubmitting(false); }
-  }
-
-  async function confirmReset(event) {
-    event.preventDefault();
-    setError(null);
-    setIsSubmitting(true);
-    try {
-      const { data } = await apiClient.post("/candidates/password-reset/confirm", {
-        identifier: identifier.trim(), code: resetCode.trim(), new_password: newPassword,
-      });
-      setResetMessage(data.message || "Your password has been updated. You can now sign in.");
-      setResetStep("complete");
-    } catch (err) {
-      setError(err.response?.data?.detail || "We couldn't verify that code. Try again.");
-    } finally { setIsSubmitting(false); }
-  }
-
-  async function resendResetCode() {
-    setError(null);
-    setResetMessage(null);
-    setIsSubmitting(true);
-    try {
-      const { data } = await apiClient.post("/candidates/password-reset/request", { identifier: identifier.trim() });
-      setResetCode("");
-      setResetMessage(data.message || "A new verification code was sent.");
-    } catch (err) {
-      setError(err.response?.data?.detail || "We couldn't send a new code. Try again shortly.");
-    } finally { setIsSubmitting(false); }
-  }
-
-  function startReset() {
-    setError(null);
-    setResetMessage(null);
-    setResetStep("request");
-    setResetCode("");
-    setNewPassword("");
-    setResetOpen(true);
-  }
 
   return (
     <AuthLayout intro={showIntro && <div className={`brand-intro ${introExiting ? "is-exiting" : ""}`} role="status" aria-label="InterviewAI introduction">
         <div className="intro-symbol-wrap"><span className="intro-orbit orbit-a" /><span className="intro-orbit orbit-b" /><span className="intro-symbol"><img className="intro-logo-motion" src="/interviewai-intro.gif" alt="" aria-hidden="true" /></span></div>
         <p className="intro-wordmark">Interview<span>AI</span></p><span className="intro-progress" />
       </div>}>
-      {verificationOpen ? <>
-        <p className="auth-form-kicker">ACCOUNT VERIFICATION</p><h1>Verify your contact.</h1>
-        <p className="auth-form-intro">We’ll send a six-digit code to the email or Indian mobile number entered on this account.</p>
-        {verificationMessage && <p className="auth-inline-success" role="status">{verificationMessage}</p>}
-        {!verificationRequested ? <form className="auth-form" onSubmit={requestAccountVerification}>
-          <div className="auth-field auth-field--plain"><div className="auth-input-wrap"><AuthFieldIcon name="email" /><input aria-label="Email or phone number" type="text" required value={identifier} onChange={(event) => setIdentifier(event.target.value)} className="auth-input" placeholder="Email or +91 mobile number" /></div></div>
-          {error && <p role="alert" className="auth-error">{error}</p>}
-          <button type="submit" disabled={isSubmitting} className="auth-submit">{isSubmitting ? "Sending code…" : "Send verification code"}</button>
-        </form> : <form className="auth-form" onSubmit={confirmAccountVerification}>
-          <label className="auth-field" htmlFor="account-verification-code">Verification code<input id="account-verification-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, ""))} className="auth-input" placeholder="6-digit code" /></label>
-          {error && <p role="alert" className="auth-error">{error}</p>}
-          <button type="submit" disabled={isSubmitting} className="auth-submit">{isSubmitting ? "Verifying…" : "Verify contact"}</button>
-          <div className="auth-reset-actions"><button type="button" className="auth-text-button" disabled={isSubmitting} onClick={requestAccountVerification}>Resend code</button><button type="button" className="auth-text-button" onClick={() => { setVerificationRequested(false); setVerificationCode(""); setError(null); }}>Change contact</button></div>
-        </form>}
-        <p className="auth-switch"><button type="button" className="auth-text-button" onClick={() => { setVerificationOpen(false); setVerificationRequested(false); setError(null); }}>Back to sign in</button></p>
-      </> : resetOpen ? <>
-              <p className="auth-form-kicker">ACCOUNT RECOVERY</p><h1>{resetStep === "complete" ? "You’re back in control." : resetStep === "verify" ? "Check your messages." : "Reset your password."}</h1>
-              <p className="auth-form-intro">{resetStep === "request" ? "We’ll send a verification code to your account by email or SMS." : resetStep === "verify" ? `Enter the six-digit code sent by ${identifier.includes("@") ? "email" : "SMS"} and choose a new password.` : "Your password has been updated."}</p>
-              {resetStep === "request" && <form className="auth-form" onSubmit={requestResetCode}>
-                <label className="auth-field" htmlFor="reset-identifier">Email or phone number<input id="reset-identifier" type="text" autoComplete="username" required value={identifier} onChange={(event) => setIdentifier(event.target.value)} className="auth-input" placeholder="Email address or +91 mobile number" /></label>
-                {error && <p role="alert" className="auth-error">{error}</p>}
-                <button type="submit" disabled={isSubmitting} className="auth-submit">{isSubmitting ? "Sending code…" : "Send verification code"}</button>
-              </form>}
-              {resetStep === "verify" && <form className="auth-form" onSubmit={confirmReset}>
-                {resetMessage && <p role="status" className="auth-inline-success">{resetMessage}</p>}
-                <label className="auth-field" htmlFor="reset-code">Verification code<input id="reset-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={resetCode} onChange={(event) => setResetCode(event.target.value)} className="auth-input" placeholder="6-digit code" /></label>
-                <label className="auth-field" htmlFor="new-password">New password<input id="new-password" type="password" autoComplete="new-password" minLength={8} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="auth-input" placeholder="At least 8 characters" /></label>
-                {error && <p role="alert" className="auth-error">{error}</p>}
-                <button type="submit" disabled={isSubmitting} className="auth-submit">{isSubmitting ? "Updating password…" : "Save new password"}</button>
-                <div className="auth-reset-actions"><button type="button" className="auth-text-button" disabled={isSubmitting} onClick={resendResetCode}>Resend code</button><button type="button" className="auth-text-button" onClick={() => { setResetStep("request"); setError(null); }}>Use a different email or phone</button></div>
-              </form>}
-              {resetStep === "complete" && <p role="status" className="auth-inline-success">{resetMessage}</p>}
-              <p className="auth-switch"><button type="button" className="auth-text-button" onClick={() => { setResetOpen(false); setError(null); }}>Back to sign in</button></p>
-            </> : <>
+      <>
               <p className="auth-form-kicker">WELCOME BACK</p><h1>Good to see you.</h1>
               {justSignedUp && <p className="auth-inline-success">Account created. Sign in to get started.</p>}
               <form onSubmit={handleLogin} className="auth-form">
                 <div className="auth-field auth-field--plain"><div className="auth-input-wrap"><AuthFieldIcon name="email" /><input id="email" aria-label="Email or phone number" type="text" required autoComplete="username" value={identifier} onChange={(event) => setIdentifier(event.target.value)} className="auth-input" placeholder="Email or phone number" /></div></div>
                 <div className="auth-field auth-field--plain"><span className="auth-password-control auth-input-wrap"><AuthFieldIcon name="lock" /><input id="password" aria-label="Password" type={visible ? "text" : "password"} required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="auth-input" placeholder="Password" /><button type="button" className="auth-eye" aria-label={visible ? "Hide password" : "Show password"} aria-pressed={visible} onClick={() => setVisible((value) => !value)}><EyeIcon visible={visible} /></button></span></div>
-                <div className="auth-form-options"><label className="auth-remember"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> <span>Keep me signed in</span></label><button type="button" className="auth-text-button" onClick={startReset}>Forgot password?</button></div>
+                <div className="auth-form-options"><label className="auth-remember"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} /> <span>Keep me signed in</span></label></div>
                 {error && <p role="alert" className="auth-error">{error}</p>}
                 <button type="submit" disabled={isSubmitting} className="auth-submit">{isSubmitting ? "Signing in…" : "Sign in"}<span aria-hidden="true">→</span></button>
               </form>
               <div className="auth-divider"><span>or continue with</span></div>
               <GoogleAuthButton remember={remember} onError={setError} onBusyChange={setIsSubmitting} />
               <p className="auth-switch">New to InterviewAI? <Link to="/signup">Create an account</Link></p>
-              <p className="auth-switch">Need to verify your account? <button type="button" className="auth-text-button" onClick={() => { setError(null); setVerificationOpen(true); }}>Verify with OTP</button></p>
               <p className="auth-legal">By continuing, you agree to use InterviewAI responsibly and keep your account details secure.</p>
-            </>}
+            </>
     </AuthLayout>
   );
 }

@@ -28,17 +28,6 @@ function Signup() {
   const [passwordNotice, setPasswordNotice] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
-  const [step, setStep] = useState("details");
-  const [emailCode, setEmailCode] = useState("");
-  const [phoneCode, setPhoneCode] = useState("");
-  const [emailVerified, setEmailVerified] = useState(false);
-  const [phoneVerified, setPhoneVerified] = useState(false);
-  const [verificationMessage, setVerificationMessage] = useState("");
-
-  async function requestVerification(identifier) {
-    const { data } = await apiClient.post("/candidates/verification/request", { identifier });
-    setVerificationMessage(data.message || "A verification code was sent.");
-  }
 
   async function handleSignup(event) {
     event.preventDefault();
@@ -46,15 +35,7 @@ function Signup() {
     setIsSubmitting(true);
     try {
       await apiClient.post("/candidates", { name, email, phone_number: phoneNumber || null, password });
-      setStep("verify");
-      setEmailVerified(false);
-      setPhoneVerified(!phoneNumber);
-      try {
-        await requestVerification(email);
-        if (phoneNumber) await requestVerification(phoneNumber);
-      } catch (deliveryError) {
-        setError(deliveryError.response?.data?.detail || "Your account was created, but we couldn't send the verification code. Use resend after checking the delivery setup.");
-      }
+      navigate("/", { state: { justSignedUp: true, email } });
     } catch (err) {
       if (err.response?.status === 409) {
         setError(err.response.data.detail || "Those account details are already registered. Try signing in instead.");
@@ -65,23 +46,6 @@ function Signup() {
     } finally { setIsSubmitting(false); }
   }
 
-  async function confirmVerification(identifier, code, channel) {
-    setError(null);
-    setVerificationMessage("");
-    setIsSubmitting(true);
-    try {
-      const { data } = await apiClient.post("/candidates/verification/confirm", { identifier, code: code.trim() });
-      const verifiedEmail = data.email_verified;
-      const verifiedPhone = data.phone_verified;
-      setEmailVerified(verifiedEmail);
-      setPhoneVerified(verifiedPhone);
-      setVerificationMessage(data.message);
-      if (verifiedEmail && (!phoneNumber || verifiedPhone)) navigate("/", { state: { justSignedUp: true, email } });
-      else if (channel === "email" && phoneNumber) setVerificationMessage("Email verified. Verify your mobile number to complete account setup.");
-    } catch (verificationError) {
-      setError(verificationError.response?.data?.detail || "That code couldn't be verified. Check it and try again.");
-    } finally { setIsSubmitting(false); }
-  }
 
   function handleSuggestPassword() {
     try {
@@ -95,7 +59,7 @@ function Signup() {
 
   return (
     <AuthLayout isSignup>
-      {step === "details" ? <><p className="auth-form-kicker">CREATE YOUR ACCOUNT</p>
+      <><p className="auth-form-kicker">CREATE YOUR ACCOUNT</p>
       <h1>Start with a little practice.</h1>
       <form onSubmit={handleSignup} className="auth-form signup-form">
         <div className="auth-field auth-field--plain"><div className="auth-input-wrap"><AuthFieldIcon name="person" /><input id="signup-name" aria-label="Full name" type="text" autoComplete="name" required value={name} onChange={(event) => setName(event.target.value)} className="auth-input" placeholder="Your name" /></div></div>
@@ -109,25 +73,7 @@ function Signup() {
       </form>
       <div className="auth-divider"><span>or sign up with</span></div>
       <GoogleAuthButton onError={setError} onBusyChange={setIsSubmitting} />
-      <p className="auth-switch">Already have an account? <Link to="/">Sign in</Link></p></> : <>
-        <p className="auth-form-kicker">VERIFY YOUR ACCOUNT</p><h1>Check your messages.</h1>
-        <p className="auth-form-intro">Enter the six-digit codes sent to your email{phoneNumber ? " and mobile number" : ""}.</p>
-        {verificationMessage && <p className="auth-inline-success" role="status">{verificationMessage}</p>}
-        <div className="auth-verification-list">
-          <form className="auth-form auth-verification-card" onSubmit={(event) => { event.preventDefault(); confirmVerification(email, emailCode, "email"); }}>
-            <div className="auth-verification-title"><AuthFieldIcon name="email" /><span>Email address</span><strong className={emailVerified ? "is-verified" : ""}>{emailVerified ? "Verified" : "Required"}</strong></div>
-            <p>{email}</p>
-            {!emailVerified && <><div className="auth-input-wrap"><input aria-label="Email verification code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, ""))} className="auth-input" placeholder="6-digit email code" /></div><div className="auth-verify-actions"><button type="submit" className="auth-submit" disabled={isSubmitting}>{isSubmitting ? "Verifying…" : "Verify email"}</button><button type="button" className="auth-text-button" onClick={() => requestVerification(email).catch((err) => setError(err.response?.data?.detail || "Could not resend the email code."))}>Resend</button></div></>}
-          </form>
-          {phoneNumber && <form className="auth-form auth-verification-card" onSubmit={(event) => { event.preventDefault(); confirmVerification(phoneNumber, phoneCode, "phone"); }}>
-            <div className="auth-verification-title"><AuthFieldIcon name="phone" /><span>Mobile number</span><strong className={phoneVerified ? "is-verified" : ""}>{phoneVerified ? "Verified" : "Required"}</strong></div>
-            <p>{phoneNumber}</p>
-            {!phoneVerified && <><div className="auth-input-wrap"><input aria-label="Mobile verification code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={phoneCode} onChange={(event) => setPhoneCode(event.target.value.replace(/\D/g, ""))} className="auth-input" placeholder="6-digit SMS code" /></div><div className="auth-verify-actions"><button type="submit" className="auth-submit" disabled={isSubmitting}>{isSubmitting ? "Verifying…" : "Verify mobile"}</button><button type="button" className="auth-text-button" onClick={() => requestVerification(phoneNumber).catch((err) => setError(err.response?.data?.detail || "Could not resend the SMS code."))}>Resend</button></div></>}
-          </form>}
-        </div>
-        {error && <p role="alert" className="auth-error">{error}</p>}
-        <p className="auth-switch">Already verified? <Link to="/">Sign in</Link></p>
-      </>}
+      <p className="auth-switch">Already have an account? <Link to="/">Sign in</Link></p></>
     </AuthLayout>
   );
 }

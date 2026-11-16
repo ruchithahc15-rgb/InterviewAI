@@ -11,13 +11,6 @@ function Profile() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [savedEmail, setSavedEmail] = useState("");
-  const [savedPhoneNumber, setSavedPhoneNumber] = useState("");
-  const [emailVerified, setEmailVerified] = useState(true);
-  const [phoneVerified, setPhoneVerified] = useState(true);
-  const [emailCode, setEmailCode] = useState("");
-  const [phoneCode, setPhoneCode] = useState("");
-  const [verificationNotice, setVerificationNotice] = useState("");
   const [avatarUrl, setAvatarUrl] = useState(() => {
     try { return localStorage.getItem(`interviewai:avatar:${candidateId}`) || ""; } catch { return ""; }
   });
@@ -44,8 +37,6 @@ function Profile() {
       .then(([candidateResponse, interviewsResponse, resultsResponse, questionsResponse, responsesResponse]) => {
         const data = candidateResponse.data;
         setName(data.name || ""); setEmail(data.email || ""); setPhoneNumber(data.phone_number || "");
-        setSavedEmail(data.email || ""); setSavedPhoneNumber(data.phone_number || "");
-        setEmailVerified(Boolean(data.email_verified)); setPhoneVerified(Boolean(data.phone_verified));
         const mine = interviewsResponse.data.filter((item) => item.candidate_id === candidateId);
         const mineIds = new Set(mine.map((item) => item.id));
         setInterviews(mine);
@@ -63,29 +54,14 @@ function Profile() {
     setSaving(true);
     setNotice(null);
     setError(null);
-    setVerificationNotice("");
-    const emailChanged = email.trim().toLowerCase() !== savedEmail.toLowerCase();
-    const phoneChanged = phoneNumber.trim() !== savedPhoneNumber;
     try {
       const { data } = await apiClient.put("/candidates/" + candidateId, { name: name.trim(), email: email.trim(), phone_number: phoneNumber.trim() || null });
       setName(data.name);
       setEmail(data.email);
       setPhoneNumber(data.phone_number || "");
-      setSavedEmail(data.email || ""); setSavedPhoneNumber(data.phone_number || "");
-      setEmailVerified(Boolean(data.email_verified));
-      setPhoneVerified(Boolean(data.phone_verified));
       localStorage.setItem("candidateName", data.name);
       window.dispatchEvent(new Event("interviewai:profile-change"));
-      const contactChanges = [];
-      if (emailChanged && !data.email_verified) contactChanges.push([data.email, "email"]);
-      if (phoneChanged && data.phone_number && !data.phone_verified) contactChanges.push([data.phone_number, "mobile"]);
-      let sentCount = 0;
-      for (const [identifier] of contactChanges) {
-        try { await apiClient.post("/candidates/verification/request", { identifier }); sentCount += 1; }
-        catch (deliveryError) { setError(deliveryError.response?.data?.detail || "Your details were saved, but a verification code could not be sent."); }
-      }
-      setNotice(contactChanges.length ? "Your profile has been updated." : "Your profile has been updated.");
-      setVerificationNotice(sentCount ? "Verification codes sent. Confirm each changed contact below." : "");
+      setNotice("Your profile has been updated.");
     } catch (err) {
       console.error(err);
       setError(err.response?.data?.detail || "We couldn't save those changes. Please try again.");
@@ -94,18 +70,6 @@ function Profile() {
     }
   }
 
-  async function confirmProfileContact(identifier, code, channel) {
-    setError(null);
-    try {
-      const { data } = await apiClient.post("/candidates/verification/confirm", { identifier, code: code.trim() });
-      setEmailVerified(Boolean(data.email_verified));
-      setPhoneVerified(Boolean(data.phone_verified));
-      setEmailCode(""); setPhoneCode("");
-      setVerificationNotice(`${channel === "email" ? "Email" : "Mobile number"} verified successfully.`);
-    } catch (verifyError) {
-      setError(verifyError.response?.data?.detail || "We couldn't verify that code. Try again.");
-    }
-  }
 
   function handlePhotoChange(event) {
     const file = event.target.files?.[0];
@@ -176,12 +140,8 @@ function Profile() {
   return (
     <div className="profile-layout">
       <section className="panel profile-card">
-        <div className="profile-banner"><div className="profile-photo-control"><div className="profile-avatar" role={avatarUrl ? "img" : undefined} aria-label={avatarUrl ? `${name || "Your"} profile photo` : undefined} style={avatarUrl ? { backgroundImage: `url(${avatarUrl})` } : undefined}>{!avatarUrl && (name ? name[0].toUpperCase() : "C")}</div><label className="profile-photo-button" htmlFor="profile-photo" aria-label={avatarUrl ? "Change profile photo" : "Add profile photo"}><Icon name="plus" size={17} /></label><input id="profile-photo" className="visually-hidden" type="file" accept="image/*" onChange={handlePhotoChange} /></div><div><h2>{name || "Your profile"}</h2></div></div>
+        <div className="profile-banner"><div className="profile-photo-control"><div className="profile-avatar" role={avatarUrl ? "img" : undefined} aria-label={avatarUrl ? `${name || "Your"} profile photo` : undefined}>{avatarUrl ? <img className="profile-avatar-image" src={avatarUrl} alt="" /> : (name ? name[0].toUpperCase() : "C")}</div><label className="profile-photo-button" htmlFor="profile-photo" aria-label={avatarUrl ? "Change profile photo" : "Add profile photo"}><Icon name="plus" size={17} /></label><input id="profile-photo" className="visually-hidden" type="file" accept="image/*" onChange={handlePhotoChange} /></div><div><h2>{name || "Your profile"}</h2></div></div>
         {loading ? <div className="loading-state"><span className="loading-spinner" />Loading account details…</div> : <form className="profile-form" onSubmit={saveProfile}><div className="profile-section-title"><h3>Personal details</h3></div><label htmlFor="profile-name">Full name<input id="profile-name" required value={name} onChange={(event) => setName(event.target.value)} /></label><label htmlFor="profile-email">Email address<input id="profile-email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label><label htmlFor="profile-phone">Phone number<input id="profile-phone" type="tel" autoComplete="tel" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} placeholder="Add phone number" /></label>{error && <p role="alert" className="form-error">{error}</p>}{notice && <p role="status" className="form-success">{notice}</p>}<div className="profile-actions"><button className="button-primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Save changes"} <Icon name="arrow" size={17} /></button></div></form>}
-        {!loading && ((!emailVerified && email) || (phoneNumber && !phoneVerified)) && <section className="contact-verification-panel"><div><span className="eyebrow teal-eyebrow">CONTACT VERIFICATION</span><h3>Verify updated details</h3><p>{verificationNotice || "Enter the one-time code sent to each unverified contact."}</p></div>
-          {!emailVerified && email && <form onSubmit={(event) => { event.preventDefault(); confirmProfileContact(email, emailCode, "email"); }}><label htmlFor="profile-email-code">Email code</label><div><input id="profile-email-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, ""))} placeholder="6 digits" /><button type="submit" className="button-primary">Verify</button><button type="button" className="auth-text-button" onClick={() => apiClient.post("/candidates/verification/request", { identifier: email }).then(() => setVerificationNotice("A new email code was sent.")).catch((err) => setError(err.response?.data?.detail || "Could not resend the code."))}>Resend</button></div></form>}
-          {phoneNumber && !phoneVerified && <form onSubmit={(event) => { event.preventDefault(); confirmProfileContact(phoneNumber, phoneCode, "phone"); }}><label htmlFor="profile-phone-code">Mobile code</label><div><input id="profile-phone-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={phoneCode} onChange={(event) => setPhoneCode(event.target.value.replace(/\D/g, ""))} placeholder="6 digits" /><button type="submit" className="button-primary">Verify</button><button type="button" className="auth-text-button" onClick={() => apiClient.post("/candidates/verification/request", { identifier: phoneNumber }).then(() => setVerificationNotice("A new SMS code was sent.")).catch((err) => setError(err.response?.data?.detail || "Could not resend the code."))}>Resend</button></div></form>}
-        </section>}
         <div className="profile-session-actions"><div><h3>Sign out</h3><p>End your current session on this device.</p></div><button type="button" className="logout-danger" onClick={() => setShowLogoutModal(true)}><Icon name="logout" size={17} />Log out</button></div>
       </section>
       <aside className="panel profile-history"><div className="profile-history-heading"><div><span className="eyebrow teal-eyebrow">YOUR PRACTICE RECORD</span><h3>Interview history</h3></div><span className="profile-history-total">{interviews.filter((interview) => interview.status === "completed").length}<small> completed</small></span></div>{notice && <p role="status" className="form-success">{notice}</p>}{loading ? <div className="loading-state">Loading your history…</div> : interviews.length ? <div className="profile-history-list">{[...interviews].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0) || b.id - a.id).map((interview) => {

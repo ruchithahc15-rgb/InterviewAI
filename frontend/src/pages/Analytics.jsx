@@ -132,13 +132,13 @@ function Analytics() {
                   const response = responseByQuestion.get(question.id);
                   return <details className="analytics-answer-item" key={question.id}><summary><span>{String(index + 1).padStart(2, "0")}</span><span>{question.question}</span><Icon name="arrow" size={16} /></summary><div><small>{question.skill || "GENERAL PRACTICE"}</small><p>{response?.answer?.trim() || "No answer was recorded for this question."}</p></div></details>;
                 }) : <p className="analytics-empty-note">No questions are attached to this session.</p>}
-              </div> : <p className="analytics-empty-note">Select an interview to open its questions and saved answers.</p>}
+              </div> : null}
             </div>
           </details>
 
           <details className="analytics-metric-card">
             <summary><span className="metric-icon"><Icon name="chart" size={21} /></span><span className="metric-copy"><small>AVERAGE SCORE</small><strong>{loading ? "—" : overallScore === null ? "—" : `${overallScore}%`}</strong><span>{allEvaluations.length} evaluated answers</span></span><span className="metric-chevron"><Icon name="arrow" size={18} /></span></summary>
-            <div className="metric-details"><div className="analytics-detail-heading"><h3>{selectedInterview ? `${selectedInterview.role} score breakdown` : "Score breakdown"}</h3><p>{selectedInterview ? "How the saved score was evaluated" : "Choose an interview above to see its breakdown."}</p></div>
+            <div className="metric-details">{selectedInterview && <div className="analytics-detail-heading"><p>How the saved score was evaluated</p></div>}
               {selectedInterview && skillAverages.length > 0 && <div className="analytics-skill-chart" aria-label="Average score by skill"><h4>Average score by skill</h4>{skillAverages.map(({ skill, score }, index) => <div className="analytics-skill-bar" key={skill}><span>{skill}</span><div><i style={{ width: `${score}%`, animationDelay: `${index * 70}ms` }} /></div><strong>{score}</strong></div>)}</div>}
               {selectedInterview && (selectedEvaluations.length ? scoreDimensions.map(([label, field, color]) => {
                 const score = average(selectedEvaluations, field);
